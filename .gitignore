@@ -1,0 +1,24 @@
+# Ignore folders
+data/snomed-ct-entity-linking-challenge-1.2.1/**
+data/SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z/**
+src/results/**
+rag/
+
+# Python cache files and cache folders
+__pycache__/
+*.pyc
+cache/
+*.cache
+
+# Virtual environment
+venv/
+.venv/
+env/
+.env/
+
+
+# Specific files
+*.json
+*.csv
+*.tar.gz
+*.owl
