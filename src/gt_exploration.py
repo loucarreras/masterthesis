@@ -81,6 +81,22 @@ if __name__ == "__main__":
     for key, value in summary.items():
         print(f"  {key}: {value}")
 
+    max_paths = characterization_df["num_paths"].max()
+
+    max_path_nodes = characterization_df[characterization_df["num_paths"] == max_paths]
+
+    print(max_path_nodes[
+        ["concept_id", "label", "num_paths"]
+    ])
+
+    max_children = characterization_df["num_children"].max()
+
+    max_children_nodes = characterization_df[characterization_df["num_children"] == max_children]
+
+    print(max_children_nodes[
+        ["concept_id", "label", "num_children"]
+    ])
+
 
     plt.figure(figsize=(8,5))
     plt.hist(characterization_df["min_depth"], bins=30)
