@@ -115,6 +115,14 @@ if __name__ == "__main__":
     plt.title("Distribution of Root-to-Concept Paths")
     plt.show()
 
+    plt.figure(figsize=(8,5))
+    plt.hist(characterization_df["num_children"], bins=100)
+    plt.xlabel("Number of Children")
+    plt.ylabel("Frequency")
+    plt.yscale("log")
+    plt.title("Distribution of Child Nodes")
+    plt.show()
+
     leaf_counts = characterization_df["is_leaf"].value_counts()
     plt.figure(figsize=(6,6))
     plt.pie(leaf_counts, labels=["Leaf", "Non-Leaf"], autopct="%1.1f%%")
