@@ -1,372 +1,137 @@
-import json
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from collections import Counter
-from scipy.stats import pearsonr
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-def attach_ground_truth(results, gt):
-
-    enriched = []
-
-    for r in results:
-
-        note_id = r["note_id"]
-
-        ground_truth = gt.get(note_id, [])
-
-        match = match_entity(
-            pred_entity=r,
-            ground_truth=ground_truth
-        )
-
-        if match["matched"]:
-
-            r["gt_id"] = match["ground_truth"]["concept_id"]
-
-        else:
-
-            r["gt_id"] = None
-
-        enriched.append(r)
-
-    return enriched
-
-
-def get_level_reached(trace):
-
-    count = 0
-
-    for step in trace:
-        if step["valid"]:
-            count += 1
-        else:
-            break
-
-    return count
-
-
-# ============================================================
-# ONTOLOGY METRICS
-# ============================================================
-
-def ancestor_overlap(pred_id, gt_id, snomed):
-
-    if pred_id is None or gt_id is None:
-        return np.nan
-
-    pred_anc = snomed.get_all_ancestors(pred_id)
-    gt_anc = snomed.get_all_ancestors(gt_id)
-
-    pred_anc.add(pred_id)
-    gt_anc.add(gt_id)
-
-    intersection = pred_anc.intersection(gt_anc)
-
-    return len(intersection) / max(len(gt_anc), 1)
-
-
-def hierarchical_precision(pred_id, gt_id, snomed):
-
-    if pred_id is None or gt_id is None:
-        return np.nan
-
-    pred_anc = snomed.get_all_ancestors(pred_id)
-    gt_anc = snomed.get_all_ancestors(gt_id)
-
-    pred_anc.add(pred_id)
-    gt_anc.add(gt_id)
-
-    intersection = pred_anc.intersection(gt_anc)
-
-    return len(intersection) / max(len(pred_anc), 1)
-
-
-def hierarchical_recall(pred_id, gt_id, snomed):
-
-    if pred_id is None or gt_id is None:
-        return np.nan
-
-    pred_anc = snomed.get_all_ancestors(pred_id)
-    gt_anc = snomed.get_all_ancestors(gt_id)
-
-    pred_anc.add(pred_id)
-    gt_anc.add(gt_id)
-
-    intersection = pred_anc.intersection(gt_anc)
-
-    return len(intersection) / max(len(gt_anc), 1)
-
-
-def shortest_path_distance(pred_id, gt_id, snomed):
-
-    if pred_id is None or gt_id is None:
-        return np.nan
-
-    pred_path = snomed.get_path_to_root(pred_id)
-    gt_path = snomed.get_path_to_root(gt_id)
-
-    common = 0
-
-    for p, g in zip(pred_path, gt_path):
-
-        if p == g:
-            common += 1
-        else:
-            break
-
-    distance = (
-        (len(pred_path) - common)
-        + (len(gt_path) - common)
-    )
-
-    return distance
-
-
-def semantic_similarity(pred_id, gt_id, snomed):
-
-    dist = shortest_path_distance(pred_id, gt_id, snomed)
-
-    if np.isnan(dist):
-        return np.nan
-
-    return 1 / (1 + dist)
-
-
-# ============================================================
-# BUILD DATAFRAME
-# ============================================================
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
+from ontology.snomed_loader import SNOMEDHierarchy
 
 def build_analysis_dataframe(results, snomed):
-
+    
     rows = []
 
     for r in results:
 
-        trace = r["trace"]
-
-        pred_id = r["concept_id"]
+        trace = r.get("trace", [])
         gt_id = r.get("gt_id")
+        pred_id = r.get("concept_id")
+        level_reached = r.get("level_reached")
+        candidate_count = trace[-1].get("candidate_count")
 
-        level_reached = r["level_reached"]
+        success = gt_id == pred_id
 
-        failure_level = get_failure_level(trace)
+        # GT paths evaluation
+        gt_paths = snomed.get_all_ancestor_paths(gt_id)
 
-        correct_prefix = get_correct_prefix(trace)
+        filtered_paths = gt_paths.copy()
+        path_predicted = []
 
-        candidate_counts = [
-            step["candidate_count"]
-            for step in trace
-        ]
+        for step in trace[:-1]:
+            predicted_step = step.get("chosen_id")
+            level = step.get("level")
 
-        avg_candidates = np.mean(candidate_counts)
+            if predicted_step is not None:
+                path_predicted.append(predicted_step)
+            
+            filtered_paths = [
+                path for path in filtered_paths
+                if len(path) > level and path[level] == predicted_step
+            ]
 
-        final_candidate_count = candidate_counts[-1]
+        path_predicted.append(pred_id) # Predicted path
 
-        success = (
-            pred_id is not None
-            and gt_id is not None
-            and pred_id == gt_id
-        )
+        gt_depth = min(len(p) for p in filtered_paths) if filtered_paths else 0
+            
+        gt_reached = False
+        if gt_id in path_predicted:
+            gt_reached = True
+            
 
-        gt_depth = len(snomed.get_path_to_root(gt_id))
+        distance = None
+        if pred_id and gt_id:
+            distance = gt_depth - level_reached
 
-        normalized_depth = (
-            level_reached / gt_depth
-            if gt_depth > 0
-            else np.nan
-        )
+        correct_prefix_ratio = level_reached / gt_depth if gt_depth else 0
 
         rows.append({
-            "term": r["term"],
-            "note_id": r["note_id"],
-            "predicted_id": pred_id,
+
+            "note_id": r.get("note_id"),
+            "term": r.get("term"),
+
             "gt_id": gt_id,
+            "gt_label": snomed.get_label(gt_id) if gt_id else None,
+
+            "predicted_id": pred_id,
+            "predicted_label": snomed.get_label(pred_id) if pred_id else None,
+
             "success": success,
-            "reason": r["reason"],
+            "gt_reached": gt_reached,
+
             "level_reached": level_reached,
-            "failure_level": failure_level,
-            "correct_prefix": correct_prefix,
-            "avg_candidates": avg_candidates,
-            "final_candidate_count": final_candidate_count,
-            "ancestor_overlap": ancestor_overlap(pred_id, gt_id, snomed),
-            "hierarchical_precision": hierarchical_precision(pred_id, gt_id, snomed),
-            "hierarchical_recall": hierarchical_recall(pred_id, gt_id, snomed),
-            "shortest_path_distance": shortest_path_distance(pred_id, gt_id, snomed),
-            "semantic_similarity": semantic_similarity(pred_id, gt_id, snomed),
             "gt_depth": gt_depth,
-            "normalized_depth": normalized_depth
+
+            "num_remaining_paths": len(filtered_paths),
+
+            # "failure_level": failure_level,
+
+            "distance_to_gt": distance,
+
+            "candidate_count": candidate_count,
+
+            "null_prediction": pred_id is None,
+
+            # "ancestor_overlap": ancestor_overlap,
+
+            "correct_prefix_ratio": correct_prefix_ratio
         })
 
     return pd.DataFrame(rows)
 
+def plot_categorical_distribution(df, column):
+    values = df[column]
 
-# ============================================================
-# METRICS
-# ============================================================
-
-def print_global_metrics(df):
-
-    total = len(df)
-
-    correct = df["success"].sum()
-
-    failed = total - correct
-
-    accuracy = correct / total
-
-    print("\n==========================")
-    print("GLOBAL METRICS")
-    print("==========================")
-
-    print(f"Total entities: {total}")
-    print(f"Correct entities: {correct}")
-    print(f"Failed entities: {failed}")
-
-    print(f"\nAccuracy: {accuracy:.4f}")
-
-    print("\nHierarchical Metrics")
-
-    print(f"Ancestor overlap: {df['ancestor_overlap'].mean():.4f}")
-    print(f"Hierarchical precision: {df['hierarchical_precision'].mean():.4f}")
-    print(f"Hierarchical recall: {df['hierarchical_recall'].mean():.4f}")
-    print(f"Shortest path distance: {df['shortest_path_distance'].mean():.4f}")
-    print(f"Semantic similarity: {df['semantic_similarity'].mean():.4f}")
-
-
-# ============================================================
-# FAILURE ANALYSIS
-# ============================================================
-
-def analyze_failure_nodes(results):
-
-    nodes = []
-
-    for r in results:
-
-        for step in r["trace"]:
-
-            if not step["valid"]:
-                nodes.append(step["chosen_label"])
-                break
-
-    counter = Counter(nodes)
-
-    failure_df = pd.DataFrame(
-        counter.items(),
-        columns=["node", "failures"]
-    ).sort_values(
-        "failures",
-        ascending=False
-    )
-
-    return failure_df
-
-
-# ============================================================
-# PLOTS
-# ============================================================
-
-def plot_level_distribution(df):
-
-    plt.figure(figsize=(8, 5))
-
-    df["level_reached"].hist(bins=20)
-
-    plt.xlabel("Level Reached")
-    plt.ylabel("Count")
-    plt.title("Hierarchy Level Distribution")
-
-    plt.tight_layout()
+    plt.figure(figsize=(8,5))
+    plt.hist(values, bins=range(0, values.max() + 1))
+    plt.xlabel(column)
+    plt.ylabel("Frequency")
+    plt.title(f"Distribution of {column}")
     plt.show()
 
+def plot_correlation(df, var1, var2):
 
-def plot_failure_levels(df):
+    # Compute correlation coefficient
+    correlation = df[[var1, var2]].corr().iloc[0, 1]
+    print(f"Correlation between {var1} and {var2}: {correlation:.2f}")
 
-    plt.figure(figsize=(8, 5))
+    x = df[var1].values
+    y = df[var2].values
 
-    df["failure_level"].dropna().hist(bins=20)
+    # Remove NaNs (important in real datasets)
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
-    plt.xlabel("Failure Level")
-    plt.ylabel("Count")
-    plt.title("Failure Level Distribution")
+    # Scatter plot
+    plt.scatter(x, y, alpha=0.6)
 
-    plt.tight_layout()
+    # Fit regression line (1st degree polynomial)
+    m, b = np.polyfit(x, y, 1)
+    y_line = m * x + b
+
+    # Sort for clean line drawing
+    sorted_idx = np.argsort(x)
+
+    plt.plot(x[sorted_idx], y_line[sorted_idx], color='red', linewidth=2)
+
+    plt.xlabel(var1)
+    plt.ylabel(var2)
+    plt.title(f"Correlation between {var1} and {var2}")
+
     plt.show()
 
+def plot_distribution(df, var):
 
-def plot_shortest_path_distance(df):
-
-    plt.figure(figsize=(8, 5))
-
-    df["shortest_path_distance"].dropna().hist(bins=30)
-
-    plt.xlabel("Shortest Path Distance")
-    plt.ylabel("Count")
-    plt.title("Ontology Distance Distribution")
-
-    plt.tight_layout()
+    plt.figure(figsize=(8,5))
+    plt.violinplot(df[var])
+    plt.xlabel(var)
+    plt.title(f"Distribution of {var}")
     plt.show()
-
-
-def plot_semantic_similarity(df):
-
-    plt.figure(figsize=(8, 5))
-
-    df["semantic_similarity"].dropna().hist(bins=30)
-
-    plt.xlabel("Semantic Similarity")
-    plt.ylabel("Count")
-    plt.title("Semantic Similarity Distribution")
-
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_candidate_failure(df):
-
-    bins = [0, 5, 10, 20, 50, 100, 200, 500]
-
-    df["candidate_bin"] = pd.cut(
-        df["final_candidate_count"],
-        bins=bins
-    )
-
-    failure_rate = (
-        df.groupby("candidate_bin")["success"]
-        .apply(lambda x: 1 - x.mean())
-    )
-
-    plt.figure(figsize=(8, 5))
-
-    failure_rate.plot(kind="bar")
-
-    plt.ylabel("Failure Rate")
-    plt.xlabel("Candidate Count Bin")
-    plt.title("Failure Rate vs Candidate Count")
-
-    plt.tight_layout()
-    plt.show()
-
-
-def correlation_candidates_success(df):
-
-    df["success_numeric"] = (
-        df["success"].astype(int)
-    )
-
-    corr, p = pearsonr(
-        df["final_candidate_count"],
-        df["success_numeric"]
-    )
-
-    print("\n==========================")
-    print("CORRELATION")
-    print("==========================")
-
-    print(f"Correlation: {corr:.4f}")
-    print(f"P-value: {p:.6f}")
