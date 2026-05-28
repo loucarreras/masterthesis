@@ -19,11 +19,13 @@ class SNOMEDHierarchy:
 
         # IS-A only
         self.is_a = self.rels[self.rels["typeId"] == IS_A]
+        self.attr_rels = self.rels[self.rels["typeId"] != IS_A]
 
         # Hierarchy maps
         self.parent_map = self.build_parent_map()
         self.child_map = self.build_child_map()
         self.label_map= self.build_label_map()
+        self.attribute_map = self.build_attribute_map()
 
     def build_parent_map(self):
 
@@ -60,21 +62,40 @@ class SNOMEDHierarchy:
             label_map[row["conceptId"]] = row["term"]
 
         return label_map
-    
+
+    def build_attribute_map(self):
+
+        attr_map = defaultdict(list)
+
+        for _, row in self.attr_rels.iterrows():
+            source = row["sourceId"]
+            type_id = row["typeId"]
+            destination = row["destinationId"]
+            attr_map[source].append((type_id, destination))
+
+        return dict(attr_map) 
     def get_children(self, concept_id):
         return self.child_map.get(concept_id, [])
     
     def get_parents(self, concept_id):
         return self.parent_map.get(concept_id, [])
 
-    # def get_label(self, concept_id):
-    #     return self.label_map.get(concept_id, concept_id)
-
     def get_label(self, concept_id):
-        row = self.descriptions[self.descriptions["conceptId"] == concept_id]
-        if len(row) == 0:
-            return concept_id
-        return row.iloc[0]["term"]
+        return self.label_map.get(concept_id, concept_id)
+    
+    def get_attributes(self, concept_id):
+        return self.attribute_map.get(concept_id, [])
+
+    def get_all_descriptions(self, concept_id):
+        rows = self.descriptions[self.descriptions["conceptId"] == concept_id]
+        return rows["term"].tolist()
+    
+    def get_all_synonyms(self, concept_id):
+        rows = self.descriptions[
+            (self.descriptions["conceptId"] == concept_id) &
+            (self.descriptions["typeId"] == "900000000000013009") # Synonym
+        ]
+        return rows["term"].tolist()
 
     def is_leaf(self, concept_id):
         return len(self.get_children(concept_id)) == 0
@@ -173,3 +194,95 @@ class SNOMEDHierarchy:
                     queue.append(child)
 
         return visited
+    
+    # TEXT DEFINITIONS
+    
+    def load_text_definitions(self, text_def_file):
+
+        df = pd.read_csv(text_def_file, sep="\t", dtype=str)
+
+        df = df[df["active"] == "1"]
+
+        self.text_definitions = df
+
+        self.definition_map = (
+            df.groupby("conceptId")["term"]
+            .apply(list)
+            .to_dict()
+        )
+
+        self.definition_count_map = {
+            k: len(v) for k, v in self.definition_map.items()
+        }
+
+    def has_text_definition(self, concept_id):
+        return concept_id in self.definition_map
+
+
+    def get_text_definitions(self, concept_id):
+        return self.definition_map.get(concept_id, [])
+
+
+    def get_num_text_definitions(self, concept_id):
+        return self.definition_count_map.get(concept_id, 0)
+
+
+    def get_text_definition_length(self, concept_id):
+        defs = self.get_text_definitions(concept_id)
+        if not defs:
+            return 0
+        return sum(len(d.split()) for d in defs)
+
+    def lang_refset_loader(self, lang_refset_file):
+
+        df = pd.read_csv(lang_refset_file, sep="\t", dtype=str)
+
+        df = df[df["active"] == "1"]
+
+        self.lang_refset = df
+    
+    def get_preferred_term(self, concept_id, lang_refset_id="900000000000509007"):
+
+        if not hasattr(self, "lang_refset"):
+            raise ValueError("Language reference set not loaded. Call lang_refset_loader first.")
+
+        rows = self.lang_refset[
+            (self.lang_refset["referencedComponentId"] == concept_id) &
+            (self.lang_refset["refsetId"] == lang_refset_id)
+        ]
+
+        if rows.empty:
+            return self.get_label(concept_id)
+
+        return rows.iloc[0]["term"]
+    
+    def get_acceptable_terms(self, concept_id, lang_refset_id="900000000000509007"):
+
+        if not hasattr(self, "lang_refset"):
+            raise ValueError("Language reference set not loaded. Call lang_refset_loader first.")
+
+        rows = self.lang_refset[
+            (self.lang_refset["referencedComponentId"] == concept_id) &
+            (self.lang_refset["refsetId"] == lang_refset_id)
+        ]
+
+        if rows.empty:
+            return [self.get_label(concept_id)]
+
+        return rows["term"].tolist()
+    
+    def get_preferred_terms(self, concept_id, lang_refset_id="900000000000509007"):
+
+        if not hasattr(self, "lang_refset"):
+            raise ValueError("Language reference set not loaded. Call lang_refset_loader first.")
+
+        rows = self.lang_refset[
+            (self.lang_refset["referencedComponentId"] == concept_id) &
+            (self.lang_refset["refsetId"] == lang_refset_id) &
+            (self.lang_refset["acceptabilityId"] == "900000000000548007") # Preferred
+        ]
+
+        if rows.empty:
+            return [self.get_label(concept_id)]
+
+        return rows["term"].tolist()

@@ -2,7 +2,8 @@ import pandas as pd
 from ontology.snomed_loader import SNOMEDHierarchy
 import os
 import matplotlib.pyplot as plt
-
+import numpy as np
+import seaborn as sns
 if __name__ == "__main__":
 
     # LOAD SNOMED HIERARCHY
@@ -18,10 +19,10 @@ if __name__ == "__main__":
     snomed.load_text_definitions(r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_TextDefinition_Snapshot-en_INT_20260401.txt")
     print(f"Loaded {len(snomed.text_definitions)} SNOMED CT definitions.")
 
-    if os.path.exists("definitions_path_characterization.csv"):
+    if os.path.exists("definitions_ancestors_characterization.csv"):
         
         print("Loading characterization results...")
-        characterization_df = pd.read_csv("definitions_path_characterization.csv", dtype={"concept_id": str})
+        characterization_df = pd.read_csv("definitions_ancestors_characterization.csv", dtype={"concept_id": str})
         print(f"Loaded {len(characterization_df)} characterization results.")
 
     else:
@@ -43,6 +44,7 @@ if __name__ == "__main__":
 
             concept_id = row.concept_id
             ancestors = snomed.get_all_ancestors(concept_id)
+            ancestors.add(concept_id)
 
             for ancestor in ancestors:
 
@@ -69,7 +71,7 @@ if __name__ == "__main__":
                 )
 
         characterization_df = pd.DataFrame(rows)
-        characterization_df.to_csv("definitions_path_characterization.csv", index=False, encoding="utf-8")
+        characterization_df.to_csv("definitions_ancestors_characterization.csv", index=False, encoding="utf-8")
     
     print("Characterization summary:")
     print(characterization_df.head(10))
@@ -120,4 +122,20 @@ if __name__ == "__main__":
     plt.xlabel("Concepts with Text Definitions")
     plt.ylabel("Number of Children")
     plt.title("Distribution of Child Nodes")
+    plt.show()
+    
+    with_def_leafs = characterization_df[(characterization_df["has_text_definition"] == True) & (characterization_df["is_leaf"] == True)]
+    with_def_no_leafs  = characterization_df[(characterization_df["has_text_definition"] == True) & (characterization_df["is_leaf"] == False)]
+    no_def_leafs = characterization_df[(characterization_df["has_text_definition"] == False) & (characterization_df["is_leaf"] == True)]
+    no_def_no_leafs = characterization_df[(characterization_df["has_text_definition"] == False) & (characterization_df["is_leaf"] == False)]
+
+    matrix_def_leafs = np.array([with_def_leafs.shape[0], with_def_no_leafs.shape[0], no_def_leafs.shape[0], no_def_no_leafs.shape[0]]).reshape(2,2)
+    
+    heatmap_data = characterization_df.groupby(["has_text_definition", "is_leaf"]).size().unstack(fill_value=0)
+
+    plt.figure(figsize=(8,5))
+    sns.heatmap(heatmap_data, annot=True, fmt="d", cmap="Blues")
+    plt.xlabel("Is Leaf")
+    plt.ylabel("Has Text Definition")
+    plt.title("Distribution of Concepts")
     plt.show()
