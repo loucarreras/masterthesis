@@ -241,48 +241,55 @@ class SNOMEDHierarchy:
 
         self.lang_refset = df
     
-    def get_preferred_term(self, concept_id, lang_refset_id="900000000000509007"):
-
-        if not hasattr(self, "lang_refset"):
-            raise ValueError("Language reference set not loaded. Call lang_refset_loader first.")
-
-        rows = self.lang_refset[
-            (self.lang_refset["referencedComponentId"] == concept_id) &
-            (self.lang_refset["refsetId"] == lang_refset_id)
-        ]
-
-        if rows.empty:
-            return self.get_label(concept_id)
-
-        return rows.iloc[0]["term"]
-    
-    def get_acceptable_terms(self, concept_id, lang_refset_id="900000000000509007"):
-
-        if not hasattr(self, "lang_refset"):
-            raise ValueError("Language reference set not loaded. Call lang_refset_loader first.")
-
-        rows = self.lang_refset[
-            (self.lang_refset["referencedComponentId"] == concept_id) &
-            (self.lang_refset["refsetId"] == lang_refset_id)
-        ]
-
-        if rows.empty:
-            return [self.get_label(concept_id)]
-
-        return rows["term"].tolist()
-    
     def get_preferred_terms(self, concept_id, lang_refset_id="900000000000509007"):
-
         if not hasattr(self, "lang_refset"):
             raise ValueError("Language reference set not loaded. Call lang_refset_loader first.")
-
-        rows = self.lang_refset[
-            (self.lang_refset["referencedComponentId"] == concept_id) &
+        
+        # Get description IDs for this concept
+        description_rows = self.descriptions[self.descriptions["conceptId"] == concept_id]
+        description_ids = description_rows["id"].tolist()
+        
+        if not description_ids:
+            return []
+        
+        # Filter lang_refset by those description IDs + refset + preferred acceptability
+        preferred_rows = self.lang_refset[
+            (self.lang_refset["referencedComponentId"].isin(description_ids)) &
             (self.lang_refset["refsetId"] == lang_refset_id) &
-            (self.lang_refset["acceptabilityId"] == "900000000000548007") # Preferred
+            (self.lang_refset["acceptabilityId"] == "900000000000548007")  # Preferred
         ]
-
-        if rows.empty:
+        
+        if preferred_rows.empty:
             return [self.get_label(concept_id)]
+        
+        # Join back to descriptions to get the actual term text
+        matched_ids = preferred_rows["referencedComponentId"].tolist()
+        terms = description_rows[description_rows["id"].isin(matched_ids)]["term"].tolist()
+        return terms
 
-        return rows["term"].tolist()
+
+    def get_acceptable_terms(self, concept_id, lang_refset_id="900000000000509007"):
+        if not hasattr(self, "lang_refset"):
+            raise ValueError("Language reference set not loaded. Call lang_refset_loader first.")
+        
+        # Get description IDs for this concept
+        description_rows = self.descriptions[self.descriptions["conceptId"] == concept_id]
+        description_ids = description_rows["id"].tolist()
+        
+        if not description_ids:
+            return []
+        
+        # Filter lang_refset by those description IDs + refset + acceptable acceptability
+        acceptable_rows = self.lang_refset[
+            (self.lang_refset["referencedComponentId"].isin(description_ids)) &
+            (self.lang_refset["refsetId"] == lang_refset_id) &
+            (self.lang_refset["acceptabilityId"] == "900000000000549004")  # Acceptable
+        ]
+        
+        if acceptable_rows.empty:
+            return [self.get_label(concept_id)]
+        
+        # Join back to descriptions to get the actual term text
+        matched_ids = acceptable_rows["referencedComponentId"].tolist()
+        terms = description_rows[description_rows["id"].isin(matched_ids)]["term"].tolist()
+        return terms

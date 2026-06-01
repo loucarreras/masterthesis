@@ -1,6 +1,8 @@
 import pandas as pd
 import os 
 import pickle
+import matplotlib.pyplot as plt
+import json
 from preprocessing.text_chunking import preprocess_notes
 import numpy as np
 from extraction.kwextractor_scispacy import SciSpaCyExtractor
@@ -15,15 +17,12 @@ import polars as pl
 import time
 from evaluation.classification_metrics import (
     build_analysis_dataframe,
-    print_global_metrics,
-    analyze_failure_nodes,
-    plot_level_distribution,
-    plot_failure_levels,
-    plot_shortest_path_distance,
-    plot_semantic_similarity,
-    plot_candidate_failure,
-    correlation_candidates_success
+    plot_categorical_distribution,
+    plot_correlation,
+    plot_distribution
 )
+
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 COLUMNS = ["note_id", "start", "end", "concept_id"]
 DTYPES = {
@@ -143,15 +142,19 @@ if __name__ == "__main__":
 
     # EVALUATION-CLASSIFICATION
 
-    TARGET_LEVEL = "all_2"
-    CACHE_PATH_2 = f"llm_classification_{model}_level_{TARGET_LEVEL}.csv"
+    TARGET_LEVEL = "all_first_note"
+    output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
 
-    if os.path.exists(CACHE_PATH_2):
-        print(f"Loading cached classification results from: {CACHE_PATH_2}")
+    if os.path.exists(f"{output_path}.csv"):
+        print(f"Loading cached classification results from: {output_path}")
+
 
         user_annotations = pl.read_csv(
-            CACHE_PATH_2, schema_overrides=DTYPES
+            f"{output_path}.csv", schema_overrides=DTYPES
         ).select(COLUMNS)
+
+        with open(f"{output_path}.json", "r", encoding="utf-8") as f:
+            classif_results = json.load(f)
     
     else:
         classifier = OllamaSNOMEDClassifier()
@@ -165,7 +168,7 @@ if __name__ == "__main__":
 
             print(f"\nProcessing note {i+1}/{len(note_keywords)}: {note_id}")
 
-            for term_data in predicted[0:100]: # CHANGE TO ALL DATA
+            for term_data in predicted: # CHANGE TO ALL DATA
 
                 match = match_entity(pred_entity=term_data, ground_truth=ground_truth)
                 
@@ -185,51 +188,124 @@ if __name__ == "__main__":
                         start=term_data["start"],
                         end=term_data["end"],
                         note_id=note_id
-                    )    
+                    )
 
-            if i >= 0: # CHANGE TO ALL DATA
-                break
-        
-        output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
-        classifier.save_results(f"{output_path}.json")
-        classifier.save_results_csv(f"{output_path}.csv")
+            classifier.save_results(f"{output_path}.json")
+            classifier.save_results_csv(f"{output_path}.csv")       
 
         print(f"\nSaved LLM classification results to: {output_path}")
 
+        with open(f"{output_path}.json", "r", encoding="utf-8") as f:
+            classif_results = json.load(f)
 
     analysis_df = build_analysis_dataframe(
-        classifier.results,
+        classif_results,
         snomed
     )
+    print("Classification results analysis:")
 
-    print_global_metrics(analysis_df)
+    print(analysis_df.describe(include="all").transpose())
 
-    failure_nodes_df = analyze_failure_nodes(
-        classifier.results
-    )
+    print("Total predictions:", len(analysis_df))
+    print("Successful predictions:", analysis_df["gt_reached"].sum())
+    print("Failed predictions:", len(analysis_df) - analysis_df["gt_reached"].sum())
+    print("Accuracy:", analysis_df["gt_reached"].mean())
+    print("Null predictions:", analysis_df["null_prediction"].sum())
 
-    print("\nTop failure nodes:")
-    print(failure_nodes_df.head(20))
+    print("Distribution of levels reached:")
+    print(analysis_df["level_reached"].describe())
 
-    correlation_candidates_success(analysis_df)
-    plot_level_distribution(analysis_df)
+    print("Distribution of level of failure:")
+    print(analysis_df[~analysis_df["gt_reached"]]["level_reached"].describe())
 
-    plot_failure_levels(analysis_df)
+    print("Distribution of distance to GT:")
+    print(analysis_df[~analysis_df["gt_reached"]]["distance_to_gt"].describe())
 
-    plot_shortest_path_distance(analysis_df)
+    print("Distribution of possible paths failed:")
+    print(analysis_df[~analysis_df["gt_reached"]]["num_remaining_paths"].describe())
 
-    plot_semantic_similarity(analysis_df)
+    print("Correct Path Covered")
+    print(analysis_df[~analysis_df["gt_reached"]]["correct_prefix_ratio"].describe())
 
-    plot_candidate_failure(analysis_df)
+    # plot_categorical_distribution(analysis_df[~analysis_df["gt_reached"]], "level_reached") # Failure level distribution
+    # plot_correlation(analysis_df, "level_reached", "distance_to_gt")
+    # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "distance_to_gt", "correct_prefix_ratio")
+    # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "level_reached", "correct_prefix_ratio")
+    # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "num_remaining_paths", "correct_prefix_ratio")
+    # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "candidate_count", "correct_prefix_ratio")
 
-    analysis_df.to_csv(
-        f"{output_path}_analysis.csv",
-        index=False
-    )
+    # plot_distribution(analysis_df, "correct_prefix_ratio")
 
-    failure_nodes_df.to_csv(
-        f"{output_path}_failure_nodes.csv",
-        index=False
-    )
+    # plt.figure(figsize=(10, 6))
 
-    print("\nSaved analysis CSV files.")
+    # scatter = plt.scatter(
+    #     analysis_df["level_reached"],
+    #     analysis_df["candidate_count"],
+    #     c=analysis_df["correct_prefix_ratio"],   # color = path coverage
+    #     cmap="viridis",
+    #     alpha=0.7
+    # )
+
+    # cbar = plt.colorbar(scatter)
+    # cbar.set_label("Path Coverage (%)")
+
+    # plt.ylabel("Candidate Count")
+    # plt.xlabel("Level Reached")
+
+    # plt.title(
+    #     "Level Reached vs Candidate Count\n"
+    #     "Colored by GT Path Coverage"
+    # )
+
+    # plt.show()
+
+    # grouped = (
+    # analysis_df.groupby(["candidate_count", "level_reached"])
+    # .agg({
+    #     "correct_prefix_ratio": "mean",
+    #     "gt_reached": "count"
+    # })
+    # .reset_index()
+    # )
+    
+    # plt.figure(figsize=(12, 7))
+
+    # scatter = plt.scatter(
+    #     grouped["level_reached"],
+    #     grouped["candidate_count"],
+    #     s=grouped["gt_reached"] * 5,
+    #     c=grouped["correct_prefix_ratio"],
+    #     cmap="viridis",
+    #     alpha=0.7
+    # )
+
+    # cbar = plt.colorbar(scatter)
+    # cbar.set_label("Mean Path Coverage")
+
+    # plt.xlabel("Level Reached")
+    # plt.ylabel("Candidate Count")
+
+    # plt.title(
+    #     "Hierarchy Traversal Performance\n"
+    #     "Bubble size = Number of Samples"
+    # )
+
+    # plt.show()
+    
+    # PLOT LEVEL 1 CONFUSION MATRIX
+
+    y_true = [snomed.get_ancestor_at_level(gt_id, 1) for gt_id in analysis_df[~analysis_df["null_prediction"]]["gt_id"]]
+    y_pred = [snomed.get_ancestor_at_level(pred_id, 1) for pred_id in analysis_df[~analysis_df["null_prediction"]]["predicted_id"]]
+
+    print(y_true)
+    print(y_pred)
+    
+    cm = confusion_matrix(y_true, y_pred)
+    print(cm)
+
+    target_names = ["Body structure", "Clinical finding", "Procedure"]
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels = target_names)
+    disp.plot(cmap = plt.cm.Blues)
+    plt.title("Confusion Matrix at Level 1")
+    plt.show()
+    
