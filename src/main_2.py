@@ -24,6 +24,10 @@ from evaluation.classification_metrics import (
 
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
+import torch
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name(0))
+
 COLUMNS = ["note_id", "start", "end", "concept_id"]
 DTYPES = {
     "note_id": pl.String,
@@ -69,9 +73,9 @@ if __name__ == "__main__":
     # LOAD SNOMED HIERARCHY
     print("Loading SNOMED CT hierarchy...")
     snomed = SNOMEDHierarchy(
-        concept_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260401.txt",
-        relationship_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260401.txt",
-        description_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260401.txt"
+        concept_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260501.txt",
+        relationship_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt",
+        description_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260501.txt"
     )
     print("SNOMED CT hierarchy loaded.")
 
@@ -142,7 +146,7 @@ if __name__ == "__main__":
 
     # EVALUATION-CLASSIFICATION
 
-    TARGET_LEVEL = "all_first_note"
+    TARGET_LEVEL = "all_baseline_stripped"
     output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
 
     if os.path.exists(f"{output_path}.csv"):
@@ -170,7 +174,7 @@ if __name__ == "__main__":
 
             for term_data in predicted: # CHANGE TO ALL DATA
 
-                match = match_entity(pred_entity=term_data, ground_truth=ground_truth)
+                match = match_entity(pred_entity=term_data, ground_truth=ground_truth, iou_threshold=0.05)
                 
                 if match["matched"]:
 

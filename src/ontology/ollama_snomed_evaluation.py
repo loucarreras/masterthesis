@@ -2,6 +2,7 @@ import requests
 import json
 import pandas as pd
 import os
+import re
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 MODEL = "medgemma1.5"
@@ -11,6 +12,9 @@ LEVEL1 = {
     "71388002": "Procedure",
     "123037004": "Body structure"
 }
+
+def _strip_parens(label:str) -> str:
+    return re.sub(r'\s*\(.*?\)\s*$', '', label).strip()
 
 class OllamaSNOMEDClassifier:
 
@@ -130,7 +134,7 @@ Strictly return JSON format like this, without any additional text:
                 "concept_id": parent_id,
             })
         
-        label_to_id = {v: k for k, v in labels.items()}
+        label_to_id = {_strip_parens(v): k for k, v in labels.items()}
         
         # Build prompt
         prompt = self.build_prompt(term, context, labels)
@@ -157,9 +161,9 @@ Strictly return JSON format like this, without any additional text:
             }
             return finalize_result(result)
 
-        chosen_label = result.get("category")
+        chosen_label = _strip_parens(result.get("category"))
 
-        if parent_label and chosen_label == parent_label:
+        if parent_label and _strip_parens(chosen_label) == _strip_parens(parent_label):
             result["concept_id"] = parent_id
             trace.append({
                 "level": current_level,
@@ -170,6 +174,7 @@ Strictly return JSON format like this, without any additional text:
                 "candidate_count": len(labels),
                 "stopped_at_parent": True,
             })
+            return finalize_result(result)
 
         chosen_id = label_to_id.get(chosen_label)
         result["concept_id"] = chosen_id
