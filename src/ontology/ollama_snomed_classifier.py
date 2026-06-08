@@ -3,6 +3,7 @@ import json
 import pandas as pd
 import os
 from ontology.llm_backends import LLMBackend, OllamaBackend
+import re
 
 DEFAULT_BACKEND = OllamaBackend("medgemma1.5") # CHANGE FOR DIFFERENT MODELS
 
