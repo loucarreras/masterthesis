@@ -3,9 +3,9 @@ import json
 import pandas as pd
 import os
 import re
+from ontology.llm_backends import LLMBackend, OllamaBackend
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-MODEL = "medgemma1.5"
+DEFAULT_BACKEND = OllamaBackend("medgemma1.5") # CHANGE FOR DIFFERENT MODELS
 
 LEVEL1 = {
     "404684003": "Clinical finding",
@@ -16,11 +16,12 @@ LEVEL1 = {
 def _strip_parens(label:str) -> str:
     return re.sub(r'\s*\(.*?\)\s*$', '', label).strip()
 
-class OllamaSNOMEDClassifier:
+class SNOMEDClassifier:
 
-    def __init__(self, model=MODEL):
-        self.model = model
+    def __init__(self, backend: LLMBackend = DEFAULT_BACKEND):
+        self.backend = backend
         self.results = []
+
 
     def build_prompt(self, term, context, labels, parent_label=None):
         
@@ -59,42 +60,14 @@ Strictly return JSON format like this, without any additional text:
     "reason": "short explanation"
 }}
 """
+    def _call(self, prompt: str, term: str) -> dict:
 
-    def classify(self, term, context, start=None, end=None, note_id=None):
-
-        prompt = self.build_prompt(term, context)
-
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }
-
-        response = requests.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
-
-        text = response.json()["response"]
-
-        try:
+        try: 
+            text = self.backend.generate(prompt)
             result = json.loads(text)
-        except:
-            result = {
-                "term": term,
-                "category": "Unknown",
-                "reason": "Unable to classify"
-            }
-
-        
-        result.update({
-        "start": start,
-        "end": end,
-        "note_id": note_id,
-        })
-
-        self.results.append(result)
-    
-        return result
+            return result
+        except Exception:
+            return {"term": term, "category": "Unknown", "reason": "Unable to classify"}
     
     def classify_hierarchical(self, term, context, snomed, all_ancestors, gt_id, current_level = 1, parent_id = None, start=None, end=None, note_id=None, trace=None):
         
@@ -138,29 +111,11 @@ Strictly return JSON format like this, without any additional text:
         
         # Build prompt
         prompt = self.build_prompt(term, context, labels)
+        result = self._call(prompt, term)
 
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }
-
-        response = requests.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
-
-        text = response.json()["response"]
-
-        try:
-            result = json.loads(text)
-        except:
-            result = {
-                "term": term,
-                "category": "Unknown",
-                "reason": "Unable to classify"
-            }
+        if result.get("category") == "Unknown":
             return finalize_result(result)
-
+        
         chosen_label = _strip_parens(result.get("category"))
 
         if parent_label and _strip_parens(chosen_label) == _strip_parens(parent_label):

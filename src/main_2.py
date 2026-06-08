@@ -6,7 +6,7 @@ import json
 from preprocessing.text_chunking import preprocess_notes
 import numpy as np
 from extraction.kwextractor_scispacy import SciSpaCyExtractor
-from ontology.ollama_snomed_evaluation import OllamaSNOMEDClassifier
+from ontology.ollama_snomed_evaluation import SNOMEDClassifier
 from ontology.snomed_loader import SNOMEDHierarchy
 from evaluation.metrics import match_entities, compute_metrics, debug_matches, save_metrics_csv, match_entity
 from evaluation.visualization import plot_confusion_matrix, plot_iou_distribution, plot_precision_recall_curve, visualize_spans
@@ -24,9 +24,9 @@ from evaluation.classification_metrics import (
 
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
-import torch
-print(torch.cuda.is_available())
-print(torch.cuda.get_device_name(0))
+# import torch
+# print(torch.cuda.is_available())
+# print(torch.cuda.get_device_name(0))
 
 COLUMNS = ["note_id", "start", "end", "concept_id"]
 DTYPES = {
@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     # EVALUATION-CLASSIFICATION
 
-    TARGET_LEVEL = "all_baseline_stripped"
+    TARGET_LEVEL = "prova1"
     output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
 
     if os.path.exists(f"{output_path}.csv"):
@@ -161,7 +161,7 @@ if __name__ == "__main__":
             classif_results = json.load(f)
     
     else:
-        classifier = OllamaSNOMEDClassifier()
+        classifier = SNOMEDClassifier()
 
         for i, item in enumerate(note_keywords.items()):
 
@@ -179,6 +179,7 @@ if __name__ == "__main__":
                 if match["matched"]:
 
                     gt_concept_id = match["ground_truth"]["concept_id"]
+                    print(gt_concept_id)
                     gt_ancestors = snomed.get_all_ancestors(gt_concept_id)
                     gt_ancestors.add(gt_concept_id)
 
@@ -296,20 +297,21 @@ if __name__ == "__main__":
 
     # plt.show()
     
-    # PLOT LEVEL 1 CONFUSION MATRIX
+    # # PLOT LEVEL 1 CONFUSION MATRIX
 
-    y_true = [snomed.get_ancestor_at_level(gt_id, 1) for gt_id in analysis_df[~analysis_df["null_prediction"]]["gt_id"]]
-    y_pred = [snomed.get_ancestor_at_level(pred_id, 1) for pred_id in analysis_df[~analysis_df["null_prediction"]]["predicted_id"]]
+    # y_true = [snomed.get_ancestor_at_level(gt_id, 1) for gt_id in analysis_df[~analysis_df["null_prediction"]]["gt_id"]]
+    # y_pred = [snomed.get_ancestor_at_level(pred_id, 1) for pred_id in analysis_df[~analysis_df["null_prediction"]]["predicted_id"]]
+    # print(set(y_pred))
+    # print(set(y_true))
+    # cm = confusion_matrix(y_true, y_pred)
 
-    print(y_true)
-    print(y_pred)
-    
-    cm = confusion_matrix(y_true, y_pred)
-    print(cm)
+    # target_names = ["Body structure", "Clinical finding", "Procedure"]
+    # disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels = target_names)
+    # disp.plot(cmap = plt.cm.Blues)
+    # plt.title("Confusion Matrix at Level 1")
+    # plt.show()
 
-    target_names = ["Body structure", "Clinical finding", "Procedure"]
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels = target_names)
-    disp.plot(cmap = plt.cm.Blues)
-    plt.title("Confusion Matrix at Level 1")
-    plt.show()
+    print("Number of predictions failed at level 1:", (analysis_df["level_reached"] == 1).sum())
+
+    failures_level_1 = analysis_df[analysis_df["level_reached"] == 1]
     

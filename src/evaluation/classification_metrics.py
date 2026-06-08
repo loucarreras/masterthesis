@@ -15,8 +15,8 @@ def build_analysis_dataframe(results, snomed):
         gt_id = r.get("gt_id")
         pred_id = r.get("concept_id")
         level_reached = r.get("level_reached")
-        candidate_count = trace[-1].get("candidate_count")
-
+        candidate_count = trace[-1].get("candidate_count") if trace else None
+        stopped_at_parent = trace[-1].get("stopped_at_parent") if trace else None
         success = gt_id == pred_id
 
         # GT paths evaluation
@@ -81,7 +81,9 @@ def build_analysis_dataframe(results, snomed):
 
             # "ancestor_overlap": ancestor_overlap,
 
-            "correct_prefix_ratio": correct_prefix_ratio
+            "correct_prefix_ratio": correct_prefix_ratio,
+
+            "stopped_at_parent": stopped_at_parent
         })
 
     return pd.DataFrame(rows)
