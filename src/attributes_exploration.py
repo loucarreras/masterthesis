@@ -8,9 +8,9 @@ if __name__ == "__main__":
     # LOAD SNOMED HIERARCHY
     print("Loading SNOMED CT hierarchy...")
     snomed = SNOMEDHierarchy(
-        concept_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260401.txt",
-        relationship_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260401.txt",
-        description_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260401.txt"
+        concept_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260501.txt",
+        relationship_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt",
+        description_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260501.txt"
     )
     print("SNOMED CT hierarchy loaded.")
 

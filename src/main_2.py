@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     # EVALUATION-CLASSIFICATION
 
-    TARGET_LEVEL = "prova1"
+    TARGET_LEVEL = "all_baseline_stripped"
     output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
 
     if os.path.exists(f"{output_path}.csv"):
