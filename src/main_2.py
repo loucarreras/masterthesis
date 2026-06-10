@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     # EVALUATION-CLASSIFICATION
 
-    TARGET_LEVEL = "prova1"
+    TARGET_LEVEL = "medgemma27b_comparison"
     output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
 
     if os.path.exists(f"{output_path}.csv"):
@@ -229,7 +229,7 @@ if __name__ == "__main__":
     print(analysis_df[~analysis_df["gt_reached"]]["num_remaining_paths"].describe())
 
     print("Correct Path Covered")
-    print(analysis_df[~analysis_df["gt_reached"]]["correct_prefix_ratio"].describe())
+    print(analysis_df["correct_prefix_ratio"].describe())
 
     # plot_categorical_distribution(analysis_df[~analysis_df["gt_reached"]], "level_reached") # Failure level distribution
     # plot_correlation(analysis_df, "level_reached", "distance_to_gt")
@@ -238,30 +238,7 @@ if __name__ == "__main__":
     # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "num_remaining_paths", "correct_prefix_ratio")
     # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "candidate_count", "correct_prefix_ratio")
 
-    # plot_distribution(analysis_df, "correct_prefix_ratio")
-
-    # plt.figure(figsize=(10, 6))
-
-    # scatter = plt.scatter(
-    #     analysis_df["level_reached"],
-    #     analysis_df["candidate_count"],
-    #     c=analysis_df["correct_prefix_ratio"],   # color = path coverage
-    #     cmap="viridis",
-    #     alpha=0.7
-    # )
-
-    # cbar = plt.colorbar(scatter)
-    # cbar.set_label("Path Coverage (%)")
-
-    # plt.ylabel("Candidate Count")
-    # plt.xlabel("Level Reached")
-
-    # plt.title(
-    #     "Level Reached vs Candidate Count\n"
-    #     "Colored by GT Path Coverage"
-    # )
-
-    # plt.show()
+    plot_distribution(analysis_df, "correct_prefix_ratio")
 
     # grouped = (
     # analysis_df.groupby(["candidate_count", "level_reached"])
@@ -300,8 +277,6 @@ if __name__ == "__main__":
 
     # y_true = [snomed.get_ancestor_at_level(gt_id, 1) for gt_id in analysis_df[~analysis_df["null_prediction"]]["gt_id"]]
     # y_pred = [snomed.get_ancestor_at_level(pred_id, 1) for pred_id in analysis_df[~analysis_df["null_prediction"]]["predicted_id"]]
-    # print(set(y_pred))
-    # print(set(y_true))
     # cm = confusion_matrix(y_true, y_pred)
 
     # target_names = ["Body structure", "Clinical finding", "Procedure"]

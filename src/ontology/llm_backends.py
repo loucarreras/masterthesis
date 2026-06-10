@@ -2,6 +2,8 @@ from __future__ import annotations
 import json
 import os
 import requests
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
 import re
 
 class LLMBackend:
@@ -164,3 +166,18 @@ class OpenAICompatibleBackend(LLMBackend):
         response = requests.post(self.url, headers=headers, json=body)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
+
+class HuggingFaceBackend(LLMBackend):
+    def __init__(self, model_id: str, device: str = "cuda"):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.bfloat16,
+            device_map="auto"
+        )
+
+    def generate(self, prompt: str) -> str:
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            outputs = self.model.generate(**inputs, max_new_tokens=256)
+        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
