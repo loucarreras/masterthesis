@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import os
 import requests
-
+import re
 
 class LLMBackend:
     """Base class — subclass and implement generate()."""
@@ -20,9 +20,10 @@ class OllamaBackend(LLMBackend):
         base_url: Override if Ollama is running on a different host/port.
     """
 
-    def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434"):
+    def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", strip_thinking: bool = False):
         self.model = model
         self.url = f"{base_url}/api/generate"
+        self.strip_thinking = strip_thinking
 
     def generate(self, prompt: str) -> str:
         payload = {
@@ -33,9 +34,39 @@ class OllamaBackend(LLMBackend):
         }
         response = requests.post(self.url, json=payload)
         response.raise_for_status()
-        return response.json()["response"]
+        text = response.json()["response"]
+        if self.strip_thinking:
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        return text
 
+# class OllamaBackend(LLMBackend):
+#     def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", strip_thinking: bool = False):
+#         self.model = model
+#         self.base_url = base_url
+#         self.strip_thinking = strip_thinking
 
+#     def generate(self, prompt: str) -> str:
+#         payload = {
+#             "model": self.model,
+#             "messages": [
+#                 {
+#                     "role": "system",
+#                     "content": "You are a clinical terminology expert. Always respond with valid JSON only — no preamble, no markdown fences."
+#                 },
+#                 {
+#                     "role": "user",
+#                     "content": prompt
+#                 }
+#             ],
+#             "stream": False,
+#             "format": "json",
+#         }
+#         response = requests.post(f"{self.base_url}/api/chat", json=payload)
+#         response.raise_for_status()
+#         text = response.json()["message"]["content"]  # note: different response path than /api/generate
+#         if self.strip_thinking:
+#             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+#         return text
 # ---------------------------------------------------------------------------
 # Anthropic  (Claude family)
 # ---------------------------------------------------------------------------

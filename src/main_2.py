@@ -24,9 +24,9 @@ from evaluation.classification_metrics import (
 
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
-# import torch
-# print(torch.cuda.is_available())
-# print(torch.cuda.get_device_name(0))
+import torch
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name(0))
 
 COLUMNS = ["note_id", "start", "end", "concept_id"]
 DTYPES = {
@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     # EVALUATION-CLASSIFICATION
 
-    TARGET_LEVEL = "all_baseline_stripped"
+    TARGET_LEVEL = "prova1"
     output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
 
     if os.path.exists(f"{output_path}.csv"):
@@ -179,7 +179,6 @@ if __name__ == "__main__":
                 if match["matched"]:
 
                     gt_concept_id = match["ground_truth"]["concept_id"]
-                    print(gt_concept_id)
                     gt_ancestors = snomed.get_all_ancestors(gt_concept_id)
                     gt_ancestors.add(gt_concept_id)
 
