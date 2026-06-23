@@ -4,12 +4,32 @@ from collections import Counter
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
 from ontology.snomed_loader import SNOMEDHierarchy
+from evaluation.metrics import match_entity, token_jaccard
 
-def build_analysis_dataframe(results, snomed):
+def build_analysis_dataframe(results, snomed, gt, iou_threshold=0.05):
     
     rows = []
 
     for r in results:
+
+        note_id = r.get("note_id")
+        start = r.get("start")
+        end = r.get("end")
+        predicted_term = r.get("term")
+
+        gt_term = None
+        ground_truth = gt.get(note_id, [])
+        if start is not None and end is not None:
+            pred_entity = {"start": start, "end": end, "term": predicted_term}
+            match = match_entity(pred_entity=pred_entity, ground_truth=ground_truth, iou_threshold=iou_threshold)
+            if match["matched"]:
+                gt_term = match["ground_truth"]["term"]
+
+        exact_term_match = predicted_term == gt_term if gt_term is not None else None
+
+        term_jaccard = None
+        if predicted_term is not None and gt_term is not None:
+            term_jaccard = token_jaccard({"term": predicted_term}, {"term": gt_term})
 
         trace = r.get("trace", [])
         gt_id = r.get("gt_id")
@@ -55,7 +75,10 @@ def build_analysis_dataframe(results, snomed):
         rows.append({
 
             "note_id": r.get("note_id"),
-            "term": r.get("term"),
+            "term": predicted_term,
+            "gt_term": gt_term,
+            "exact_term_match": exact_term_match,
+            "term_jaccard": term_jaccard,
 
             "gt_id": gt_id,
             "gt_label": snomed.get_label(gt_id) if gt_id else None,
@@ -83,7 +106,10 @@ def build_analysis_dataframe(results, snomed):
 
             "correct_prefix_ratio": correct_prefix_ratio,
 
-            "stopped_at_parent": stopped_at_parent
+            "stopped_at_parent": stopped_at_parent,
+
+            "start" : r.get("start"),
+            "end" : r.get("end"),
         })
 
     return pd.DataFrame(rows)

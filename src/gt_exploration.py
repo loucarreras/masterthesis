@@ -26,6 +26,7 @@ if __name__ == "__main__":
             description_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260501.txt"
         )
         print("SNOMED CT hierarchy loaded.")
+        concept_count_map = annotations_df["concept_id"].value_counts().to_dict()
 
         rows = []
         for concept_id in annotations_df["concept_id"].unique():
@@ -47,7 +48,8 @@ if __name__ == "__main__":
                     "num_children": len(snomed.get_children(concept_id)),
                     "all_paths": paths,
                     "num_ancestors": len(snomed.get_all_ancestors(concept_id)),
-                    "num_descendants": len(snomed.get_all_descendants(concept_id))
+                    "num_descendants": len(snomed.get_all_descendants(concept_id)),
+                    "annotation_count": concept_count_map.get(concept_id, 0)
                 }
             )
         
@@ -130,10 +132,17 @@ if __name__ == "__main__":
     plt.show()
 
     plt.figure(figsize=(8,6))
-    plt.scatter(characterization_df["max_depth"], characterization_df["num_paths"], alpha=0.5)
+    plt.scatter(characterization_df["min_depth"], characterization_df["num_paths"], alpha=0.5)
     plt.xlabel("Maximum Depth")
     plt.ylabel("Number of Paths")
     plt.title("Depth vs Polyhierarchy")
+    plt.show()
+
+    plt.figure(figsize=(8,6))
+    plt.scatter(characterization_df["min_depth"], characterization_df["num_children"], alpha=0.5)
+    plt.xlabel("Minimum Depth")
+    plt.ylabel("Number of Children")
+    plt.title("Depth vs Child Nodes")
     plt.show()
 
     import numpy as np
@@ -152,5 +161,24 @@ if __name__ == "__main__":
     plt.ylabel("P(X >= x)")
 
     plt.title("CCDF of Number of Paths")
+
+    plt.show()
+
+    freq = characterization_df["annotation_count"].sort_values(ascending=False).reset_index(drop=True)
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(freq.index + 1, freq.values)
+    plt.xlabel("Rank (by frequency)")
+    plt.ylabel("Appearance count")
+    plt.title("Concept Frequency – Rank Plot (Long Tail)")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.show()
+
+    plt.figure(figsize=(8, 6))
+    plt.hist(freq.values, bins=50, log=True)
+    plt.xlabel("Appearance count")
+    plt.ylabel("Number of concepts (log scale)")
+    plt.title("Distribution of Concept Frequencies")
 
     plt.show()

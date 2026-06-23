@@ -21,8 +21,34 @@ def span_iou(pred, gt):
 
     return intersection / union
 
+def token_jaccard(pred, gt):
+    """
+    Word-level Jaccard similarity between the text of two spans.
+    Requires each entity dict to have a 'term' key.
+    """
+    pred_tokens = set(pred["term"].lower().split())
+    gt_tokens   = set(gt["term"].lower().split())
 
-def match_entities(predicted, ground_truth, iou_threshold=0.5):
+    if not pred_tokens and not gt_tokens:
+        return 1.0
+
+    intersection = pred_tokens & gt_tokens
+    union        = pred_tokens | gt_tokens
+
+    return len(intersection) / len(union)
+
+
+def combined_score(pred, gt, alpha=0.5):
+    """
+    Weighted combination of span IoU and token Jaccard.
+    alpha controls the weight of span_iou vs token_jaccard.
+    """
+    iou     = span_iou(pred, gt)
+    jaccard = token_jaccard(pred, gt)
+    return alpha * iou + (1 - alpha) * jaccard
+
+
+def match_entities(predicted, ground_truth, iou_threshold=0.5, alpha=0.5):
     matched_gt = set()
 
     prediction_results = []
@@ -39,7 +65,7 @@ def match_entities(predicted, ground_truth, iou_threshold=0.5):
             if not spans_overlap(pred, gt):
                 continue
 
-            iou = span_iou(pred, gt)
+            iou = combined_score(pred, gt)
 
             if iou > best_iou:
                 best_iou = iou
@@ -63,7 +89,7 @@ def match_entities(predicted, ground_truth, iou_threshold=0.5):
 
     return tp, fp, fn, prediction_results
 
-def match_entity(pred_entity, ground_truth, iou_threshold=0.5):
+def match_entity(pred_entity, ground_truth, iou_threshold=0.5, alpha=0.5):
 
     best_match = None
     best_iou = 0.0
@@ -74,7 +100,7 @@ def match_entity(pred_entity, ground_truth, iou_threshold=0.5):
         if not spans_overlap(pred_entity, gt):
             continue
 
-        iou = span_iou(pred_entity, gt)
+        iou = combined_score(pred_entity, gt)
 
         if iou > best_iou:
             best_iou = iou

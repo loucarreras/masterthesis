@@ -7,20 +7,11 @@ import torch
 import re
 
 class LLMBackend:
-    """Base class — subclass and implement generate()."""
 
     def generate(self, prompt: str) -> str:
-        """Send prompt, return raw response text (should be valid JSON per classifier contract)."""
         raise NotImplementedError
 
 class OllamaBackend(LLMBackend):
-    """
-    Runs any model served by Ollama (medgemma, biomistral, llama3, etc.).
-
-    Args:
-        model:   Ollama model tag, e.g. "medgemma1.5", "biomistral", "llama3.1:8b"
-        base_url: Override if Ollama is running on a different host/port.
-    """
 
     def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", strip_thinking: bool = False):
         self.model = model
@@ -74,16 +65,6 @@ class OllamaBackend(LLMBackend):
 # ---------------------------------------------------------------------------
 
 class AnthropicBackend(LLMBackend):
-    """
-    Uses the Anthropic Messages API directly.
-
-    Args:
-        model:   e.g. "claude-haiku-4-5-20251001", "claude-sonnet-4-6"
-        api_key: Falls back to ANTHROPIC_API_KEY env var.
-
-    Note: Instructs the model to reply with JSON only so the classifier can
-          parse it the same way it parses Ollama responses.
-    """
 
     def __init__(self, model: str, api_key: str | None = None):
         self.model = model
@@ -113,28 +94,6 @@ class AnthropicBackend(LLMBackend):
 # ---------------------------------------------------------------------------
 
 class OpenAICompatibleBackend(LLMBackend):
-    """
-    Any endpoint that speaks the OpenAI /v1/chat/completions protocol.
-
-    Examples
-    --------
-    # OpenAI
-    OpenAICompatibleBackend("gpt-4o-mini", api_key="sk-...")
-
-    # OpenRouter  (access to Med42, BioMistral, Llama, Qwen, DeepSeek, …)
-    OpenAICompatibleBackend(
-        model="m42-health/med42-70b",
-        base_url="https://openrouter.ai/api/v1",
-        api_key="sk-or-...",
-    )
-
-    # Local vLLM / LM Studio
-    OpenAICompatibleBackend(
-        model="meditron-7b",
-        base_url="http://localhost:8000/v1",
-        api_key="none",          # vLLM ignores the key
-    )
-    """
 
     def __init__(
         self,

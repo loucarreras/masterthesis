@@ -131,135 +131,114 @@ if __name__ == "__main__":
 
     # EVALUATION
 
-    # iou_threshold = 0.05
-    # all_tp, all_fp, all_fn = 0, 0, 0
-    # all_predicted, all_ground_truth, all_matches = [], [], []
-    # all_ious = []
+    iou_threshold = 0.05
+    all_tp, all_fp, all_fn = 0, 0, 0
+    all_predicted, all_ground_truth, all_matches = [], [], []
+    all_ious = []
 
-    # for note_id, predicted in note_keywords.items():
-    #     ground_truth = gt.get(note_id, [])
+    for note_id, predicted in note_keywords.items():
+        ground_truth = gt.get(note_id, [])
 
-    #     tp, fp, fn, prediction_results  = match_entities(predicted, ground_truth, iou_threshold)
+        tp, fp, fn, prediction_results  = match_entities(predicted, ground_truth, iou_threshold, alpha=1)
 
-    #     all_tp += tp
-    #     all_fp += fp
-    #     all_fn += fn
-    #     all_ious.extend([r["iou"] for r in prediction_results])
+        all_tp += tp
+        all_fp += fp
+        all_fn += fn
+        all_ious.extend([r["iou"] for r in prediction_results])
 
-    # precision, recall, f1 = compute_metrics(all_tp, all_fp, all_fn)
-    # print(min(all_ious), max(all_ious))
-    # print(f"TP: {all_tp}, FP: {all_fp}, FN: {all_fn}")
-    # print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
+    precision, recall, f1 = compute_metrics(all_tp, all_fp, all_fn)
+    print(min(all_ious), max(all_ious))
+    print(f"TP: {all_tp}, FP: {all_fp}, FN: {all_fn}")
+    print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
 
-    # csv_path = save_metrics_csv(model, iou_threshold, all_tp, all_fp, all_fn, precision, recall, f1)
-
-    # print(f"Saved metrics to: {csv_path}")
-
-    # # Confusion matrix
-    # plot_confusion_matrix(all_tp, all_fp, all_fn, model_name=model, threshold=iou_threshold)
-
-    # plot_iou_distribution(all_ious, threshold=iou_threshold, model_name=model)
-
-    # # Precision-Recall curve
-    # thresholds = np.linspace(0, 1, 20)
-    # precisions, recalls = [], []
-
-    # for t in thresholds:
-    #     tp_sum, fp_sum, fn_sum = 0, 0, 0
-
-    #     for note_id, predicted in note_keywords.items():
-    #         ground_truth = gt.get(note_id, [])
-    #         tp, fp, fn, _ = match_entities(predicted, ground_truth, iou_threshold=t)
-
-    #         tp_sum += tp
-    #         fp_sum += fp
-    #         fn_sum += fn
-
-    #     p, r, _ = compute_metrics(tp_sum, fp_sum, fn_sum)
-    #     precisions.append(p)
-    #     recalls.append(r)
-
-    # plot_precision_recall_curve(thresholds, precisions, recalls, selected_t=iou_threshold, model_name=model)
+    for note_id, predicted in note_keywords.items():
+        ground_truth = gt.get(note_id, [])
+        tp, fp, fn, prediction_results = match_entities(predicted, ground_truth, iou_threshold)
+        
+        print(f"\n{'='*60}")
+        print(f"NOTE: {note_id}")
+        print(f"{'='*60}")
+        debug_matches(predicted, ground_truth, prediction_results)
 
     # CLASSIFICATION
-    TARGET_LEVEL = 3
-    CACHE_PATH_2 = f"llm_classification_{model}_level_{TARGET_LEVEL}.csv"
+    # TARGET_LEVEL = 3
+    # CACHE_PATH_2 = f"llm_classification_{model}_level_{TARGET_LEVEL}.csv"
 
-    if os.path.exists(CACHE_PATH_2):
-        print(f"Loading cached classification results from: {CACHE_PATH_2}")
+    # if os.path.exists(CACHE_PATH_2):
+    #     print(f"Loading cached classification results from: {CACHE_PATH_2}")
 
-        user_annotations = pl.read_csv(
-            CACHE_PATH_2, schema_overrides=DTYPES
-        ).select(COLUMNS)
+    #     user_annotations = pl.read_csv(
+    #         CACHE_PATH_2, schema_overrides=DTYPES
+    #     ).select(COLUMNS)
     
-    else:
-        classifier = OllamaSNOMEDClassifier()
+    # else:
+    #     classifier = OllamaSNOMEDClassifier()
 
-        for i, item in enumerate(note_keywords.items()):
+    #     for i, item in enumerate(note_keywords.items()):
 
-            note_id = item[0]
-            predicted = item[1]
+    #         note_id = item[0]
+    #         predicted = item[1]
 
-            print(f"\nProcessing note {i+1}/{len(note_keywords)}: {note_id}")
+    #         print(f"\nProcessing note {i+1}/{len(note_keywords)}: {note_id}")
 
-            for term_data in predicted[0:2]: # CHANGE TO ALL DATA
+    #         for term_data in predicted[0:2]: # CHANGE TO ALL DATA
 
-                result = classifier.classify_hierarchical(
-                    term=term_data["term"],
-                    context=term_data["context"],
-                    snomed=snomed,
-                    target_level=TARGET_LEVEL,
-                    parent_id=None,
-                    start=term_data["start"],
-                    end=term_data["end"],
-                    note_id=note_id
-                )    
+    #             result = classifier.classify_hierarchical(
+    #                 term=term_data["term"],
+    #                 context=term_data["context"],
+    #                 snomed=snomed,
+    #                 target_level=TARGET_LEVEL,
+    #                 parent_id=None,
+    #                 start=term_data["start"],
+    #                 end=term_data["end"],
+    #                 note_id=note_id
+    #             )    
 
-            if i >= 0: # CHANGE TO ALL DATA
-                break
+    #         if i >= 0: # CHANGE TO ALL DATA
+    #             break
         
-        output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
-        classifier.save_results(f"{output_path}.json")
-        classifier.save_results_csv(f"{output_path}.csv")
+    #     output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
+    #     classifier.save_results(f"{output_path}.json")
+    #     classifier.save_results_csv(f"{output_path}.csv")
 
-        print(f"\nSaved LLM classification results to: {output_path}")
+    #     print(f"\nSaved LLM classification results to: {output_path}")
         
-        # EVALUATION
+    #     # EVALUATION
 
-        user_annotations_path = f"{output_path}.csv"
+    #     user_annotations_path = f"{output_path}.csv"
         
-        user_annotations = pl.read_csv(
-            user_annotations_path, schema_overrides=DTYPES
-        ).select(COLUMNS)
+    #     user_annotations = pl.read_csv(
+    #         user_annotations_path, schema_overrides=DTYPES
+    #     ).select(COLUMNS)
 
-    target_annotations = pl.read_csv(
-        annotations_path, schema_overrides=DTYPES
-    ).select(COLUMNS)
+    # target_annotations = pl.read_csv(
+    #     annotations_path, schema_overrides=DTYPES
+    # ).select(COLUMNS)
 
-    user_annotations = user_annotations.with_columns([
-        pl.col("start").cast(pl.Int64),
-        pl.col("end").cast(pl.Int64),
-    ])
+    # user_annotations = user_annotations.with_columns([
+    #     pl.col("start").cast(pl.Int64),
+    #     pl.col("end").cast(pl.Int64),
+    # ])
 
-    target_annotations = target_annotations.with_columns([
-        pl.col("start").cast(pl.Int64),
-        pl.col("end").cast(pl.Int64),
-    ])
+    # target_annotations = target_annotations.with_columns([
+    #     pl.col("start").cast(pl.Int64),
+    #     pl.col("end").cast(pl.Int64),
+    # ])
 
-    target_annotations = target_annotations.filter(
-    pl.col("note_id") == target_annotations["note_id"][0]
-    )  
+    # target_annotations = target_annotations.filter(
+    # pl.col("note_id") == target_annotations["note_id"][0]
+    # )  
 
-    target_annotations = lift_annotations_to_level(target_annotations, snomed, level=TARGET_LEVEL)
+    # target_annotations = lift_annotations_to_level(target_annotations, snomed, level=TARGET_LEVEL)
 
-    ious = iou_per_class(user_annotations, target_annotations)
-    for concept, score in ious.items():
-        print(f"{concept}: {score:.4f}")
+    # ious = iou_per_class(user_annotations, target_annotations)
+    # for concept, score in ious.items():
+    #     print(f"{concept}: {score:.4f}")
 
-    macro_iou = macro_character_iou(user_annotations, target_annotations)
-    weighted_iou = support_weighted_character_iou(user_annotations, target_annotations)
+    # macro_iou = macro_character_iou(user_annotations, target_annotations)
+    # weighted_iou = support_weighted_character_iou(user_annotations, target_annotations)
 
-    print(f"macro-averaged character IoU: {macro_iou:0.4f}")
-    print(f"support-weighted character IoU: {weighted_iou:0.4f}")
+    # print(f"macro-averaged character IoU: {macro_iou:0.4f}")
+    # print(f"support-weighted character IoU: {weighted_iou:0.4f}")
 
         
