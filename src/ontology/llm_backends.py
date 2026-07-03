@@ -123,6 +123,7 @@ class OpenAICompatibleBackend(LLMBackend):
             "response_format": {"type": "json_object"},  # ignored silently if unsupported
         }
         response = requests.post(self.url, headers=headers, json=body)
+        print(response.json())
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
 
