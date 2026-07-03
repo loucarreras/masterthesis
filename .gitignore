@@ -16,7 +16,7 @@ venv/
 .venv/
 env/
 .env/
-
+.env
 
 # Specific files
 *.json
