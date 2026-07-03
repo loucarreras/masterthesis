@@ -1,11 +1,3 @@
-"""
-Evaluation of entity linking classification results.
-
-Reads only the saved outputs of entity_linking.py (the classification JSON/CSV).
-Does not re-run extraction or classification, and does not need the raw notes —
-only the SNOMED hierarchy (for ancestor lookups) and the saved results.
-"""
-
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -18,6 +10,7 @@ from evaluation.classification_metrics import (
     plot_correlation,
     plot_distribution,
 )
+import pickle
 
 SNOMED_CONCEPT_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260501.txt"
 SNOMED_RELATIONSHIP_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt"
@@ -28,7 +21,7 @@ ANNOTATIONS_PATH = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_anno
 NER_MODEL = "en_core_sci_sm"
 TARGET_LEVEL = "all_baseline_stripped"
 CLASSIFICATION_RESULTS_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}.json"
-
+CACHE_PATH = f"cache/note_keywords_{NER_MODEL}.pkl"
 LEVEL_1_TARGET_NAMES = ["Body structure", "Clinical finding", "Procedure"]    
     
 def row_distance(row):
@@ -47,7 +40,18 @@ def row_distance(row):
     return 1 - token_jaccard(pred, gt)
    
 
+def plot_context_length_by_level(analysis_df, failures_only=False):
+    df = analysis_df[~analysis_df["gt_reached"]] if failures_only else analysis_df
+    levels = sorted(df["level_reached"].dropna().unique())
+    data = [df.loc[df["level_reached"] == level, "context_length"].dropna() for level in levels]
 
+    plt.figure(figsize=(10, 6))
+    plt.boxplot(data, labels=levels)
+    plt.xlabel("Level Reached")
+    plt.ylabel("Context Length (characters)")
+    plt.title("Context Length by Failure Level" if failures_only else "Context Length by Level Reached")
+    plt.show()
+    
 def main():
     
     print("Loading SNOMED CT hierarchy...")
@@ -66,6 +70,12 @@ def main():
     annotations_df = pd.read_csv(ANNOTATIONS_PATH, dtype={"concept_id": str})
     print(f"Loaded {len(annotations_df)} ground truth annotations.")
 
+    print("Loading entity extraction results...")
+    print(f"Loading cached keywords from: {CACHE_PATH}")
+    
+    with open(CACHE_PATH, "rb") as f:
+        note_keywords = pickle.load(f)
+
     gt = {}
     for note_id, group in annotations_df.groupby("note_id"):
         gt[note_id] = [
@@ -79,7 +89,7 @@ def main():
         ]
 
 
-    analysis_df = build_analysis_dataframe(classif_results, snomed, gt)
+    analysis_df = build_analysis_dataframe(classif_results, snomed, gt, note_keywords)
 
     print("Classification results analysis:")
     print(analysis_df.describe(include="all").transpose())
@@ -115,7 +125,7 @@ def main():
     # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "num_remaining_paths", "correct_prefix_ratio")
     # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "candidate_count", "correct_prefix_ratio")
 
-    plot_distribution(analysis_df, "correct_prefix_ratio")
+    # plot_distribution(analysis_df, "correct_prefix_ratio")
 
     # Bubble plot of hierarchy traversal performance (uncomment to use)
     # grouped = (
@@ -143,32 +153,32 @@ def main():
 
     failures_level_1 = analysis_df[analysis_df["level_reached"] == 1]
 
-    non_null = analysis_df[~analysis_df["null_prediction"]]
-    y_true = [snomed.get_ancestor_at_level(gt_id, 1) for gt_id in non_null["gt_id"]]
-    y_pred = [snomed.get_ancestor_at_level(pred_id, 1) for pred_id in non_null["predicted_id"]]
+    # non_null = analysis_df[~analysis_df["null_prediction"]]
+    # y_true = [snomed.get_ancestor_at_level(gt_id, 1) for gt_id in non_null["gt_id"]]
+    # y_pred = [snomed.get_ancestor_at_level(pred_id, 1) for pred_id in non_null["predicted_id"]]
 
-    cm = confusion_matrix(y_true, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=LEVEL_1_TARGET_NAMES)
-    disp.plot(cmap=plt.cm.Blues)
-    plt.title("Confusion Matrix at Level 1")
-    plt.show()
+    # cm = confusion_matrix(y_true, y_pred)
+    # disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=LEVEL_1_TARGET_NAMES)
+    # disp.plot(cmap=plt.cm.Blues)
+    # plt.title("Confusion Matrix at Level 1")
+    # plt.show()
 
-    analysis_df = analysis_df.copy()
-    analysis_df["jaccard_distance"] = analysis_df.apply(row_distance, axis=1)
+    # analysis_df = analysis_df.copy()
+    # analysis_df["jaccard_distance"] = analysis_df.apply(row_distance, axis=1)
 
-    df = analysis_df
-    df = df[~df["gt_reached"]]
+    # df = analysis_df
+    # df = df[~df["gt_reached"]]
  
-    levels = sorted(df["level_reached"].dropna().unique())
-    data = [df.loc[df["level_reached"] == level, "jaccard_distance"].dropna() for level in levels]
+    # levels = sorted(df["level_reached"].dropna().unique())
+    # data = [df.loc[df["level_reached"] == level, "jaccard_distance"].dropna() for level in levels]
  
-    plt.figure(figsize=(10, 6))
-    plt.boxplot(data, labels=levels)
-    plt.xlabel("Level Reached")
-    plt.ylabel("Jaccard Distance (predicted vs. ground truth label)")
-    title =  "Jaccard Distance by Level Reached"
-    plt.title(title)
-    plt.show()
+    # plt.figure(figsize=(10, 6))
+    # plt.boxplot(data, labels=levels)
+    # plt.xlabel("Level Reached")
+    # plt.ylabel("Jaccard Distance (predicted vs. ground truth label)")
+    # title =  "Jaccard Distance by Level Reached"
+    # plt.title(title)
+    # plt.show()
 
     summary = analysis_df.groupby("distance_to_gt").agg(
         n=("exact_term_match", "size"),
@@ -193,6 +203,10 @@ def main():
     plt.show()
 
     plot_correlation(analysis_df[~analysis_df["gt_reached"]], "correct_prefix_ratio", "term_jaccard")
+
+    plot_context_length_by_level(analysis_df, failures_only=True)
+
+    plot_correlation(analysis_df[~analysis_df["gt_reached"]], "level_reached", "context_length")
 
     return analysis_df, failures_level_1
 

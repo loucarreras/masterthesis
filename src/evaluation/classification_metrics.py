@@ -6,7 +6,7 @@ from scipy.stats import linregress
 from ontology.snomed_loader import SNOMEDHierarchy
 from evaluation.metrics import match_entity, token_jaccard
 
-def build_analysis_dataframe(results, snomed, gt, iou_threshold=0.05):
+def build_analysis_dataframe(results, snomed, gt, note_keywords, iou_threshold=0.05):
     
     rows = []
 
@@ -24,12 +24,9 @@ def build_analysis_dataframe(results, snomed, gt, iou_threshold=0.05):
             match = match_entity(pred_entity=pred_entity, ground_truth=ground_truth, iou_threshold=iou_threshold)
             if match["matched"]:
                 gt_term = match["ground_truth"]["term"]
+                term_jaccard = match["iou"]
 
         exact_term_match = predicted_term == gt_term if gt_term is not None else None
-
-        term_jaccard = None
-        if predicted_term is not None and gt_term is not None:
-            term_jaccard = token_jaccard({"term": predicted_term}, {"term": gt_term})
 
         trace = r.get("trace", [])
         gt_id = r.get("gt_id")
@@ -72,6 +69,16 @@ def build_analysis_dataframe(results, snomed, gt, iou_threshold=0.05):
 
         correct_prefix_ratio = level_reached / gt_depth if gt_depth else 0
 
+        context_length = None
+        for term_data in note_keywords.get(note_id, []):
+            if (
+                start is not None and end is not None
+                and abs(term_data["start"] - start) < 1e-6
+                and abs(term_data["end"] - end) < 1e-6
+            ):
+                context_length = len(term_data.get("context", "") or "")
+                break
+
         rows.append({
 
             "note_id": r.get("note_id"),
@@ -110,6 +117,7 @@ def build_analysis_dataframe(results, snomed, gt, iou_threshold=0.05):
 
             "start" : r.get("start"),
             "end" : r.get("end"),
+            "context_length": context_length,
         })
 
     return pd.DataFrame(rows)
