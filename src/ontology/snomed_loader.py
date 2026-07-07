@@ -10,7 +10,7 @@ class SNOMEDHierarchy:
         # Load SNOMED CT data from RF2 files
         self.concepts = pd.read_csv(concept_file, sep="\t", dtype=str)
         self.rels = pd.read_csv(relationship_file, sep="\t", dtype=str)
-        self.descriptions = pd.read_csv(description_file, sep="\t", dtype=str)
+        self.descriptions = pd.read_csv(description_file, sep="\t", dtype=str, keep_default_na=False, na_filter=False)
 
         # Only active concepts
         self.concepts = self.concepts[self.concepts["active"] == "1"]
@@ -73,7 +73,11 @@ class SNOMEDHierarchy:
             destination = row["destinationId"]
             attr_map[source].append((type_id, destination))
 
-        return dict(attr_map) 
+        return dict(attr_map)
+    
+    def build_full_synonym_map(self):
+        return self.descriptions.groupby("conceptId")["term"].apply(list).to_dict()
+     
     def get_children(self, concept_id):
         return self.child_map.get(concept_id, [])
     
