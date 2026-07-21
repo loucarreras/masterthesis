@@ -13,10 +13,11 @@ class LLMBackend:
 
 class OllamaBackend(LLMBackend):
 
-    def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", strip_thinking: bool = False):
+    def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", strip_thinking: bool = False, num_ctx: int = 8192):
         self.model = model
         self.url = f"{base_url}/api/generate"
         self.strip_thinking = strip_thinking
+        self.num_ctx = num_ctx
 
     def generate(self, prompt: str) -> str:
         payload = {
@@ -24,13 +25,26 @@ class OllamaBackend(LLMBackend):
             "prompt": prompt,
             "stream": False,
             "format": "json",
+            "options": {
+                "num_ctx": self.num_ctx,
+            }
         }
         response = requests.post(self.url, json=payload)
         response.raise_for_status()
-        text = response.json()["response"]
+        data = response.json()
+
+        total_time = data.get("total_duration")
+        text = data.get("response", "") or ""
+        thinking = data.get("thinking", "") or ""
+
+        if not text.strip() and thinking.strip():
+            text = thinking
+        
+        # print(json.dumps(response.json(), indent=2)) 
+
         if self.strip_thinking:
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-        return text
+        return text, total_time
 
 # class OllamaBackend(LLMBackend):
 #     def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", strip_thinking: bool = False):
