@@ -1,18 +1,19 @@
-import pandas as pd
-import os 
+import os
 import pickle
-from preprocessing.text_chunking import preprocess_notes
-import numpy as np
-from extraction.kwextractor_scispacy import SciSpaCyExtractor
-from ontology.ollama_snomed_classifier import OllamaSNOMEDClassifier
-from ontology.snomed_loader import SNOMEDHierarchy
-from evaluation.metrics import match_entities, compute_metrics, debug_matches, save_metrics_csv
-from evaluation.visualization import plot_confusion_matrix, plot_iou_distribution, plot_precision_recall_curve, visualize_spans
+import json
 from collections import defaultdict
-from extraction.utils import merge_adjacent_entities
-from evaluation.scoring import macro_character_iou, support_weighted_character_iou, iou_per_class
+
+import pandas as pd
 import polars as pl
-import time
+import torch
+
+from preprocessing.text_chunking import preprocess_notes
+from extraction.kwextractor_scispacy import SciSpaCyExtractor
+from extraction.utils import merge_adjacent_entities
+from ontology.ollama_snomed_classifier import SNOMEDClassifier
+from ontology.snomed_loader import SNOMEDHierarchy
+from evaluation.metrics import match_entity
+
 
 COLUMNS = ["note_id", "start", "end", "concept_id"]
 DTYPES = {
@@ -22,187 +23,169 @@ DTYPES = {
     "concept_id": pl.String,
 }
 
+TRAINING_PATH = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_notes.csv"  # CHANGE TO ALL DATA?
+ANNOTATIONS_PATH = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_annotations.csv"
 
-def lift_annotations_to_level(
-    annotations: pl.DataFrame,
-    snomed,
-    level: int,
-    concept_column: str = "concept_id",
-):
+SNOMED_CONCEPT_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260501.txt"
+SNOMED_RELATIONSHIP_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt"
+SNOMED_DESCRIPTION_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260501.txt"
+
+NER_MODEL = "en_core_sci_sm"
+OFFSET_FIX = 2
+CONTEXT_WINDOW = 50
+IOU_THRESHOLD = 0.05
+
+TARGET_LEVEL = "full_recursion_attempt1"
+OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}"
+CACHE_PATH = f"cache/note_keywords_{NER_MODEL}.pkl"
+
+
+def extract_entities(processed_df, model=NER_MODEL, cache_path=CACHE_PATH):
     """
-    Replace concept IDs with ancestor IDs at a specified hierarchy level.
-    """
-
-    def lift(concept_id):
-        return snomed.get_ancestor_at_level(concept_id, level)
-
-    return annotations.with_columns(
-        pl.col(concept_column)
-        .map_elements(lift, return_dtype=pl.String)
-        .alias(concept_column)
-    )
-
-
-if __name__ == "__main__":
+    Entity recognition step: run the NER extractor over each chunk and merge
+    adjacent entities back into note-level spans.
     
-    # LOADING DATA
+    """
+    if os.path.exists(cache_path):
+        print(f"Loading cached keywords from: {cache_path}")
+        with open(cache_path, "rb") as f:
+            return pickle.load(f)
+
+    note_keywords = defaultdict(list)
+    extractor = SciSpaCyExtractor(model=model)
+
+    for row in processed_df.itertuples(index=False):
+        note_id = row.note_id
+        text = row.text
+        chunk_start = row.chunk_start
+
+        keywords = extractor.extract(text)
+
+        for kw in keywords:
+            note_keywords[note_id].append(
+                {
+                    "term": kw["text"].lower().strip(),
+                    "start": kw["start"] + chunk_start + OFFSET_FIX,
+                    "end": kw["end"] + chunk_start + OFFSET_FIX,
+                    "label": kw["label"],
+                    "context": text[max(0, kw["start"] - CONTEXT_WINDOW):kw["end"] + CONTEXT_WINDOW],
+                }
+            )
+
+    note_keywords = dict(note_keywords)
+
+    for note_id in note_keywords:
+        note_keywords[note_id] = merge_adjacent_entities(
+            note_keywords[note_id],
+            text=processed_df[processed_df.note_id == note_id].text.iloc[0],
+        )
+
+    os.makedirs("cache", exist_ok=True)
+    with open(cache_path, "wb") as f:
+        pickle.dump(note_keywords, f)
+    print(f"Saved extracted keywords to cache: {cache_path}")
+
+    return note_keywords
+
+
+def classify_entities(note_keywords, gt, snomed, output_path=OUTPUT_PATH):
+    """
+    Entity classification step: hierarchically classify each extracted entity
+    into the SNOMED CT ontology using an LLM.
+
+    """
+    if os.path.exists(f"{output_path}.csv"):
+        print(f"Loading cached classification results from: {output_path}")
+
+        user_annotations = pl.read_csv(
+            f"{output_path}.csv", schema_overrides=DTYPES
+        ).select(COLUMNS)
+
+        with open(f"{output_path}.json", "r", encoding="utf-8") as f:
+            classif_results = json.load(f)
+
+        return user_annotations, classif_results
+
+    classifier = SNOMEDClassifier()
+
+    for i, (note_id, predicted) in enumerate(note_keywords.items()):
+        ground_truth = gt.get(note_id, [])
+
+        print(f"\nProcessing note {i + 1}/{len(note_keywords)}: {note_id}")
+
+        for term_data in predicted:  # CHANGE TO ALL DATA
+            match = match_entity(
+                pred_entity=term_data, ground_truth=ground_truth, iou_threshold=IOU_THRESHOLD
+            )
+
+            if match["matched"]:
+
+                classifier.classify_hierarchical(
+                    term=term_data["term"],
+                    context=term_data["context"],
+                    snomed=snomed,
+                    parent_id=None,
+                    start=term_data["start"],
+                    end=term_data["end"],
+                    note_id=note_id,
+                )
+
+        classifier.save_results(f"{output_path}.json")
+        classifier.save_results_csv(f"{output_path}.csv")
+
+    print(f"\nSaved LLM classification results to: {output_path}")
+
+    with open(f"{output_path}.json", "r", encoding="utf-8") as f:
+        classif_results = json.load(f)
+
+    return None, classif_results
+
+
+def main():
+    print(torch.cuda.is_available())
+    print(torch.cuda.get_device_name(0))
+
     print("Loading data...")
-    training_path = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_notes.csv" # CHANGE TO ALL DATA?
-    notes_df = pd.read_csv(training_path)
+    notes_df = pd.read_csv(TRAINING_PATH)
     print(f"Loaded {len(notes_df)} notes.")
 
     print("Loading ground truth annotations...")
-    annotations_path = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_annotations.csv"
-    annotations_df = pd.read_csv(annotations_path)
+    annotations_df = pd.read_csv(ANNOTATIONS_PATH, dtype={"concept_id": str})
     print(f"Loaded {len(annotations_df)} ground truth annotations.")
 
-    # LOAD SNOMED HIERARCHY
     print("Loading SNOMED CT hierarchy...")
     snomed = SNOMEDHierarchy(
-        concept_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260401.txt",
-        relationship_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260401.txt",
-        description_file=r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260401.txt"
+        concept_file=SNOMED_CONCEPT_FILE,
+        relationship_file=SNOMED_RELATIONSHIP_FILE,
+        description_file=SNOMED_DESCRIPTION_FILE,
     )
     print("SNOMED CT hierarchy loaded.")
 
-    # PREPROCESSING
     processed_df = preprocess_notes(notes_df)
-
-    gt = {}
-
+    
+    gt = {} # Group GT annotations by note_id for fast lookup during classification.
     for note_id, group in annotations_df.groupby("note_id"):
         gt[note_id] = [
             {
                 "term": row.span.lower().strip(),
                 "start": row.start,
-                "end": row.end
+                "end": row.end,
+                "concept_id": row.concept_id,
             }
             for row in group.itertuples()
         ]
 
-    # EXTRACTION
+    note_keywords = extract_entities(processed_df)
 
-    model="en_core_sci_sm"
-    CACHE_PATH = f"cache/note_keywords_{model}.pkl"
+    _, classif_results = classify_entities(note_keywords, gt, snomed)
 
-    if os.path.exists(CACHE_PATH):
-
-        print(f"Loading cached keywords from: {CACHE_PATH}")
-
-        with open(CACHE_PATH, "rb") as f:
-            note_keywords = pickle.load(f)
-    
-    else:
-
-        model="en_core_sci_sm"
-        note_keywords = defaultdict(list)
-
-        extractor = SciSpaCyExtractor(model=model)
-        OFFSET_FIX = 2
-        CONTEXT_WINDOW = 50
-
-        for row in processed_df.itertuples(index=False):
-            note_id = row.note_id
-            text = row.text
-            chunk_start = row.chunk_start
-            chunk_end = row.chunk_end
-            
-            keywords = extractor.extract(text)
+    print(f"\nDone. Classification results available at: {OUTPUT_PATH}.json / {OUTPUT_PATH}.csv")
+    return classif_results
 
 
-            for kw in keywords:
-                note_keywords[note_id].append({
-                    "term": kw["text"].lower().strip(),
-                    "start": kw["start"] + chunk_start + OFFSET_FIX,
-                    "end": kw["end"] + chunk_start + OFFSET_FIX,
-                    "label": kw["label"],
-                    "context": text[max(0, kw["start"]-CONTEXT_WINDOW):kw["end"]+CONTEXT_WINDOW]
-                })
-        
-        note_keywords = dict(note_keywords)
-        
-        for note_id in note_keywords:
-            note_keywords[note_id] = merge_adjacent_entities(note_keywords[note_id], text=processed_df[processed_df.note_id == note_id].text.iloc[0])
+if __name__ == "__main__":
+    main()
 
-        os.makedirs("cache", exist_ok=True)
-        with open(CACHE_PATH, "wb") as f:
-            pickle.dump(note_keywords, f)
-        print(f"Saved extracted keywords to cache: {CACHE_PATH}")
-
-    # EVALUATION
-
-    iou_threshold = 0.05
-    all_tp, all_fp, all_fn = 0, 0, 0
-    all_predicted, all_ground_truth, all_matches = [], [], []
-    all_ious = []
-
-    for note_id, predicted in note_keywords.items():
-        ground_truth = gt.get(note_id, [])
-
-        tp, fp, fn, prediction_results  = match_entities(predicted, ground_truth, iou_threshold, alpha=1)
-
-        all_tp += tp
-        all_fp += fp
-        all_fn += fn
-        all_ious.extend([r["iou"] for r in prediction_results])
-
-    precision, recall, f1 = compute_metrics(all_tp, all_fp, all_fn)
-    print(min(all_ious), max(all_ious))
-    print(f"TP: {all_tp}, FP: {all_fp}, FN: {all_fn}")
-    print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
-
-    for note_id, predicted in note_keywords.items():
-        ground_truth = gt.get(note_id, [])
-        tp, fp, fn, prediction_results = match_entities(predicted, ground_truth, iou_threshold)
-        
-        print(f"\n{'='*60}")
-        print(f"NOTE: {note_id}")
-        print(f"{'='*60}")
-        debug_matches(predicted, ground_truth, prediction_results)
-
-    # CLASSIFICATION
-    # TARGET_LEVEL = 3
-    # CACHE_PATH_2 = f"llm_classification_{model}_level_{TARGET_LEVEL}.csv"
-
-    # if os.path.exists(CACHE_PATH_2):
-    #     print(f"Loading cached classification results from: {CACHE_PATH_2}")
-
-    #     user_annotations = pl.read_csv(
-    #         CACHE_PATH_2, schema_overrides=DTYPES
-    #     ).select(COLUMNS)
-    
-    # else:
-    #     classifier = OllamaSNOMEDClassifier()
-
-    #     for i, item in enumerate(note_keywords.items()):
-
-    #         note_id = item[0]
-    #         predicted = item[1]
-
-    #         print(f"\nProcessing note {i+1}/{len(note_keywords)}: {note_id}")
-
-    #         for term_data in predicted[0:2]: # CHANGE TO ALL DATA
-
-    #             result = classifier.classify_hierarchical(
-    #                 term=term_data["term"],
-    #                 context=term_data["context"],
-    #                 snomed=snomed,
-    #                 target_level=TARGET_LEVEL,
-    #                 parent_id=None,
-    #                 start=term_data["start"],
-    #                 end=term_data["end"],
-    #                 note_id=note_id
-    #             )    
-
-    #         if i >= 0: # CHANGE TO ALL DATA
-    #             break
-        
-    #     output_path = f"llm_classification_{model}_level_{TARGET_LEVEL}"
-    #     classifier.save_results(f"{output_path}.json")
-    #     classifier.save_results_csv(f"{output_path}.csv")
-
-    #     print(f"\nSaved LLM classification results to: {output_path}")
-        
     #     # EVALUATION
 
     #     user_annotations_path = f"{output_path}.csv"
