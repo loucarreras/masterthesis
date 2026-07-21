@@ -35,7 +35,7 @@ OFFSET_FIX = 2
 CONTEXT_WINDOW = 50
 IOU_THRESHOLD = 0.05
 
-TARGET_LEVEL = "medgemma27b_comparison"
+TARGET_LEVEL = "gemma4_exploratory"
 OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}"
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}.pkl"
 
@@ -113,7 +113,7 @@ def classify_entities(note_keywords, gt, snomed, output_path=OUTPUT_PATH):
 
         print(f"\nProcessing note {i + 1}/{len(note_keywords)}: {note_id}")
 
-        for term_data in predicted:  # CHANGE TO ALL DATA
+        for term_data in predicted:
             match = match_entity(
                 pred_entity=term_data, ground_truth=ground_truth, iou_threshold=IOU_THRESHOLD
             )
@@ -147,8 +147,8 @@ def classify_entities(note_keywords, gt, snomed, output_path=OUTPUT_PATH):
 
 
 def main():
-    print(torch.cuda.is_available())
-    print(torch.cuda.get_device_name(0))
+    # print(torch.cuda.is_available())
+    # print(torch.cuda.get_device_name(0))
 
     print("Loading data...")
     notes_df = pd.read_csv(TRAINING_PATH)
