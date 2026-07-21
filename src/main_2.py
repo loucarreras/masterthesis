@@ -34,18 +34,14 @@ NER_MODEL = "en_core_sci_sm"
 OFFSET_FIX = 2
 CONTEXT_WINDOW = 50
 IOU_THRESHOLD = 0.05
+CONTEXT_MODE = "full_text"  # "full_text" | "paragraph"
 
-TARGET_LEVEL = "medgemma27b_comparison"
+TARGET_LEVEL = "medgemma1_5_context_fulltext"
 OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}"
-CACHE_PATH = f"cache/note_keywords_{NER_MODEL}.pkl"
+CACHE_PATH = f"cache/note_keywords_{NER_MODEL}_{CONTEXT_MODE}.pkl"
 
 
-def extract_entities(processed_df, model=NER_MODEL, cache_path=CACHE_PATH):
-    """
-    Entity recognition step: run the NER extractor over each chunk and merge
-    adjacent entities back into note-level spans.
-    
-    """
+def extract_entities(processed_df, note_full_text=None, model=NER_MODEL, cache_path=CACHE_PATH):
     if os.path.exists(cache_path):
         print(f"Loading cached keywords from: {cache_path}")
         with open(cache_path, "rb") as f:
@@ -61,6 +57,15 @@ def extract_entities(processed_df, model=NER_MODEL, cache_path=CACHE_PATH):
 
         keywords = extractor.extract(text)
 
+        if CONTEXT_MODE == "full_text":
+            context = note_full_text[note_id]
+        elif CONTEXT_MODE == "paragraph":
+            context = f"{row.section}:\n{text}".strip()
+        elif CONTEXT_MODE == "sentence":
+            context =  text[max(0, kw["start"] - CONTEXT_WINDOW):kw["end"] + CONTEXT_WINDOW],
+        else:
+            raise ValueError(f"Unknown CONTEXT_MODE: {CONTEXT_MODE}")
+
         for kw in keywords:
             note_keywords[note_id].append(
                 {
@@ -68,7 +73,7 @@ def extract_entities(processed_df, model=NER_MODEL, cache_path=CACHE_PATH):
                     "start": kw["start"] + chunk_start + OFFSET_FIX,
                     "end": kw["end"] + chunk_start + OFFSET_FIX,
                     "label": kw["label"],
-                    "context": text[max(0, kw["start"] - CONTEXT_WINDOW):kw["end"] + CONTEXT_WINDOW],
+                    "context": context,
                 }
             )
 
@@ -115,7 +120,7 @@ def classify_entities(note_keywords, gt, snomed, output_path=OUTPUT_PATH):
 
         for term_data in predicted:  # CHANGE TO ALL DATA
             match = match_entity(
-                pred_entity=term_data, ground_truth=ground_truth, iou_threshold=IOU_THRESHOLD
+                pred_entity=term_data, ground_truth=ground_truth, iou_threshold=IOU_THRESHOLD, alpha = 1
             )
 
             if match["matched"]:
@@ -180,7 +185,8 @@ def main():
             for row in group.itertuples()
         ]
 
-    note_keywords = extract_entities(processed_df)
+    note_full_text = dict(zip(notes_df.note_id, notes_df.text))
+    note_keywords = extract_entities(processed_df, note_full_text = note_full_text)
 
     _, classif_results = classify_entities(note_keywords, gt, snomed)
 
