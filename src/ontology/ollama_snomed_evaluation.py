@@ -63,11 +63,11 @@ Strictly return JSON format like this, without any additional text:
     def _call(self, prompt: str, term: str) -> dict:
 
         try: 
-            text = self.backend.generate(prompt)
+            text, total_time = self.backend.generate(prompt)
             result = json.loads(text)
-            return result
+            return result, total_time
         except Exception:
-            return {"term": term, "category": "Unknown", "reason": "Unable to classify"}
+            return {"term": term, "category": "Unknown", "reason": "Unable to classify"}, None
     
     def classify_hierarchical(self, term, context, snomed, all_ancestors, gt_id, current_level = 1, parent_id = None, start=None, end=None, note_id=None, trace=None):
         
@@ -82,7 +82,8 @@ Strictly return JSON format like this, without any additional text:
                 "note_id": note_id,
                 "trace":trace,
                 "level_reached": current_level,
-                "gt_id": gt_id
+                "gt_id": gt_id,
+                "context": context,
             })
 
             self.results.append(result)
@@ -111,7 +112,7 @@ Strictly return JSON format like this, without any additional text:
         
         # Build prompt
         prompt = self.build_prompt(term, context, labels)
-        result = self._call(prompt, term)
+        result, total_time = self._call(prompt, term)
 
         if result.get("category") == "Unknown":
             return finalize_result(result)
@@ -128,6 +129,7 @@ Strictly return JSON format like this, without any additional text:
                 "gt_reached": (parent_id == gt_id),
                 "candidate_count": len(labels),
                 "stopped_at_parent": True,
+                "call_time": total_time,
             })
             return finalize_result(result)
 
@@ -148,6 +150,7 @@ Strictly return JSON format like this, without any additional text:
             "gt_reached": (chosen_id == gt_id),
             "candidate_count": len(labels),
             "stopped_at_parent": False,
+            "call_time": total_time
         })
 
         # Stop conditions
