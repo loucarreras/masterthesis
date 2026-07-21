@@ -297,3 +297,224 @@ class SNOMEDHierarchy:
         matched_ids = acceptable_rows["referencedComponentId"].tolist()
         terms = description_rows[description_rows["id"].isin(matched_ids)]["term"].tolist()
         return terms
+
+    # Distance between concepts
+
+    def get_ancestor_distances(self, concept_id):
+        distances = {concept_id: 0}
+        queue = deque([concept_id])
+
+        while queue:
+            node = queue.popleft()
+            d = distances[node]
+            
+            for parent in self.get_parents(node):
+                if parent not in distances or distances[parent] > d + 1:
+                    distances[parent] = d + 1
+                    queue.append(parent)
+        
+        return distances
+
+    def get_descendant_distances(self, concept_id):
+        distances = {concept_id: 0}
+        queue = deque([concept_id]) 
+
+        while queue:
+            node = queue.popleft()
+            d = distances[node]
+            distances[node] = d
+            
+            for child in self.get_children(node):
+                if child not in distances or distances[child] > d + 1:
+                    distances[child] = d + 1
+                    queue.append(child)
+        
+        return distances
+
+    def get_common_ancestors(self, concept_id1, concept_id2):
+        ancestors1 = self.get_all_ancestors(concept_id1)
+        ancestors2 = self.get_all_ancestors(concept_id2)
+        return ancestors1.intersection(ancestors2)
+    
+    def get_shortest_path_length(self, concept_id1, concept_id2):
+        if concept_id1 == concept_id2:
+            return 0
+
+        ancestors1 = self.get_ancestor_distances(concept_id1)
+        ancestors2 = self.get_ancestor_distances(concept_id2)
+
+        common_ancestors = set(ancestors1.keys()).intersection(set(ancestors2.keys()))
+
+        if not common_ancestors:
+            return float("inf")
+
+        min_distance = float("inf")
+        for ancestor in common_ancestors:
+            distance = ancestors1[ancestor] + ancestors2[ancestor]
+            if distance < min_distance:
+                min_distance = distance
+
+        return min_distance
+
+    def get_shortest_path(self, concept_id1, concept_id2):
+        if concept_id1 == concept_id2:
+            return [concept_id1]
+
+        ancestors1 = self.get_ancestor_distances(concept_id1)
+        ancestors2 = self.get_ancestor_distances(concept_id2)
+
+        common_ancestors = set(ancestors1.keys()).intersection(set(ancestors2.keys()))
+
+        if not common_ancestors:
+            return []
+
+        min_distance = float("inf")
+        closest_ancestor = None
+        for ancestor in common_ancestors:
+            distance = ancestors1[ancestor] + ancestors2[ancestor]
+            if distance < min_distance:
+                min_distance = distance
+                closest_ancestor = ancestor
+
+        # Build path from concept_id1 to closest_ancestor
+        path1 = []
+        current = concept_id1
+        while current != closest_ancestor:
+            path1.append(current)
+            parents = self.get_parents(current)
+            if not parents:
+                break
+            current = parents[0]
+        path1.append(closest_ancestor)
+
+        # Build path from closest_ancestor to concept_id2
+        path2 = []
+        current = concept_id2
+        while current != closest_ancestor:
+            path2.append(current)
+            parents = self.get_parents(current)
+            if not parents:
+                break
+            current = parents[0]
+        
+        # Combine paths (path1 + reversed(path2))
+        full_path = path1 + list(reversed(path2))
+        
+        return full_path
+    
+    def get_lowest_common_ancestor(self, concept_id1, concept_id2):
+        ancestors1 = self.get_all_ancestors(concept_id1)
+        ancestors2 = self.get_all_ancestors(concept_id2)
+
+        common_ancestors = ancestors1.intersection(ancestors2)
+
+        if not common_ancestors:
+            return None
+
+        # Find the lowest common ancestor by depth
+        lowest_common_ancestor = None
+        max_depth = -1
+
+        for ancestor in common_ancestors:
+            depth = len(self.get_ancestor_path(ancestor))
+            if depth > max_depth:
+                max_depth = depth
+                lowest_common_ancestor = ancestor
+
+        return lowest_common_ancestor
+    
+    def get_lowest_common_ancestors(self, concept_id1, concept_id2):
+        dist_1 = self.get_ancestor_distances(concept_id1)
+        dist_2 = self.get_ancestor_distances(concept_id2)
+
+        common = set(dist_1.keys()).intersection(set(dist_2.keys()))
+
+        if not common:
+            return []
+        
+        min_total = min(dist_1[c] + dist_2[c] for c in common)
+        candidates = [c for c in common if dist_1[c] + dist_2[c] == min_total]
+
+        if len(candidates) == 1:
+            return candidates
+        
+        candidate_set = set(candidates)
+        most_specific = []
+
+        for a in candidates:
+            a_ancestors = set(self.get_ancestor_distances(a).keys()) - {a}
+            if not (a_ancestors.intersection(candidate_set)):
+                most_specific.append(a)
+
+        return most_specific
+        
+    
+    def get_distance_to_lca(self, concept_id1, concept_id2):
+        lcas = self.get_lowest_common_ancestors(concept_id1, concept_id2)
+        if not lcas:
+            return {
+                "lca": [],
+                "distance_1_to_lca": None,
+                "distance_2_to_lca": None,
+                "total_distance": None
+            }
+        
+        dist1 = self.get_ancestor_distances(concept_id1)
+        dist2 = self.get_ancestor_distances(concept_id2)
+
+        representative = lcas[0]
+
+        return {
+            "lca": representative,
+            "distance_1_to_lca": dist1[representative],
+            "distance_2_to_lca": dist2[representative],
+            "total_distance": dist1[representative] + dist2[representative]
+        }
+
+    def get_shortest_path_distance(snomed, concept_id1, concept_id2):
+        if concept_id1 == concept_id2:
+            return 0
+        
+        visited = {concept_id1: 0}
+        queue = deque([concept_id1])
+
+        while queue:
+            node = queue.popleft()
+            d = visited[node]
+            
+            neighbors = snomed.get_parents(node) + snomed.get_children(node)
+
+            for neighbor in neighbors:
+                if neighbor == concept_id2:
+                    return d + 1
+                
+                if neighbor not in visited:
+                    visited[neighbor] = d + 1
+                    queue.append(neighbor)
+        
+        return None
+
+    def wu_palmer_similarity(self, concept_id1, concept_id2, root = SNOMED_ROOT):
+        lcas = self.get_lowest_common_ancestors(concept_id1, concept_id2)
+        
+        if not lcas:
+            return None
+        
+        dist_1 = self.get_ancestor_distances(concept_id1)
+        dist_2 = self.get_ancestor_distances(concept_id2)
+        
+        if root not in dist_1 or root not in dist_2:
+            return None
+    
+        depth_1 = dist_1[root]
+        depth_2 = dist_2[root]
+
+        lca = lcas[0]
+        depth_lca = depth_1 - dist_1[lca]
+
+        denominator = depth_1 + depth_2
+
+        if denominator == 0:
+            return None
+        
+        return (2 * depth_lca) / denominator

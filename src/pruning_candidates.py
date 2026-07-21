@@ -11,6 +11,7 @@ from ontology.snomed_loader import SNOMEDHierarchy
 import pickle
 import pandas as pd
 from evaluation.metrics import match_entity
+import matplotlib.pyplot as plt
 
 SNOMED_CONCEPT_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260501.txt"
 SNOMED_RELATIONSHIP_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt"
@@ -50,6 +51,16 @@ def main():
     if os.path.exists(out_dir):
         print(f"Loading cached evaluation dataframe from: {out_dir}")
         eval_df = pd.read_pickle(out_dir)
+
+        print("Loading SNOMED hierarchy...")
+        t0 = time.time()
+        hierarchy = SNOMEDHierarchy(
+            concept_file=SNOMED_CONCEPT_FILE,
+            relationship_file=SNOMED_RELATIONSHIP_FILE,
+            description_file=SNOMED_DESCRIPTION_FILE,
+        )
+        print(f"Loaded in {time.time() - t0:.1f}s "
+            f"({len(hierarchy.parent_map)} concepts with parents, {len(hierarchy.descriptions)} descriptions)")
     
     else:
         print("Loading NER results...")
@@ -136,31 +147,178 @@ def main():
         out_path.parent.mkdir(exist_ok=True)
         eval_df.to_pickle(out_path)
         print(f"\nSaved evaluation dataframe to {out_path}")
+    
+    n_total = len(eval_df)
 
-    print("Evaluating BM25 candidate generation performance...")
+    print("EVALUATING BM25 INDEX PERFORMANCE...")
     print(eval_df.describe(include="all").transpose())
     
-    print(f"Zero candidates returned: {(eval_df['n_candidates'] == 0).sum()} "
+    # Zero candidates returned
+    zero_df = eval_df[eval_df["n_candidates"] == 0]
+    print(f"ZERO CANDIDATES RETURNED: {(eval_df['n_candidates'] == 0).sum()} "
         f"({(eval_df['n_candidates'] == 0).mean():.1%})")
     
-    mrr = (1.0/ eval_df["rank"]).fillna(0).mean()
-    print(f"Mean Reciprocal Rank (MRR): {mrr:.4f}")
+    if len(zero_df):
+        sample = zero_df[["mention", "gold_concept_id", "gold_label", "top_candidates"]].sample(
+            min(15, len(zero_df)), random_state=0
+        )
+        print(sample.to_string(index=False))
 
+    # Gold concept not among top candidates
+    print("MISSES")
+    print(f"Gold concept not among top {BM25_TOP_N} candidates: "
+        f"{(eval_df['gt_among_top_candidates'] == False).sum()} "
+        f"({(eval_df['gt_among_top_candidates'] == False).mean():.1%})")
+    
+    miss_df = eval_df[(~eval_df["gt_among_top_candidates"]) & (eval_df["n_candidates"] > 0)].copy()
+    
+    if len(miss_df):
+        sample = miss_df[["mention", "gold_concept_id", "gold_label", "top_candidates"]].sample(
+            min(15, len(miss_df)), random_state=0
+        )
+        print(sample.to_string(index=False))
+
+    # Recall@k
     for k in [1, 3, 5, 10, 20]:
         top_k = (eval_df["rank"] <= k).fillna(False).mean()
         print(f"Recall@{k}: {top_k:.4%}")
 
     
+    ks = list(range(1, BM25_TOP_N + 1))
+    recall_curve = [(eval_df["rank"] <= k).fillna(False).mean() for k in ks]
 
+    plt.figure(figsize=(8, 5))
+    plt.plot(ks, recall_curve, marker="o")
+    plt.xlabel("k")
+    plt.ylabel("Recall@k")
+    plt.title("BM25 lexical candidate generation: Recall@k")
+    plt.grid(True)
+    plt.xticks(ks)
+    plt.tight_layout()
+    curve_path = "cache/recall_curve.png"
+    plt.savefig(curve_path)
+    print(f"\nSaved recall curve to {curve_path}")
 
+    # Rank distribution of hits
+    hits_df = eval_df[eval_df["rank"].notna()]
+    print(f"\n=== Hits: {len(hits_df)} ({len(hits_df) / n_total:.1%}) ===")
+    print(hits_df["rank"].describe())
+    print("\nRank distribution (count of hits at each rank):")
+    print(hits_df["rank"].value_counts().sort_index())
 
+    plt.figure(figsize=(8, 6))
+    plt.hist(eval_df["rank"].dropna(), bins=range(1, BM25_TOP_N + 2), align="left", rwidth=0.8) 
+    plt.xticks(range(1, BM25_TOP_N + 1))
+    plt.xlabel("Rank of Gold Concept in BM25 Candidates")
+    plt.ylabel("Frequency")
+    plt.title("Distribution of Gold Concept Ranks in BM25 Candidates")
+    plt.show()
 
+    # Mean reciprocal rank (MRR)
+    rr = (1.0 / hits_df["rank"]).fillna(0)
+    mrr = rr.mean()
+    print(f"Mean Reciprocal Rank (MRR): {mrr:.4f}")
 
-                
+    print(f"Reciprocal Rank Statistics:")
+    print(rr.describe())
+
+    plt.figure(figsize=(8, 6))
+    plt.boxplot(rr.dropna(), vert=True)
+    plt.xlabel("Reciprocal Rank")
+    plt.title("Distribution of Reciprocal Ranks for Gold Concepts in BM25 Candidates")
+    plt.show()
+
+    # Additional analysis: analysis of the mentions for which the gold concept was not among the top candidates
+
+    misses_df = eval_df[~eval_df["gt_among_top_candidates"]]
+    misses_df = misses_df[misses_df["n_candidates"] > 0]  # Only consider cases where candidates were returned
+    print(f"\n=== Misses: {len(misses_df)} ({len(misses_df) / n_total:.1%}) ===")
+
+    # For each miss, analyze the candidates returned. Is the candidate an ancestor of the gold concept? Is it a descendant? Distance?
+    miss_rows = []
+    
+    for idx, row in misses_df.iterrows():
+        gold_concept_id = row["gold_concept_id"]
+        top_candidates = row["top_candidates"]
+
+        # Analyze the relationship of each candidate to the gold concept
+        golden_ancestors = hierarchy.get_all_ancestors(gold_concept_id)
+        golden_descendants = hierarchy.get_all_descendants(gold_concept_id)
         
+        for rank_position, candidate_id in enumerate(top_candidates, start=1):
+            if candidate_id in golden_ancestors:
+                relationship = "ancestor"
+            elif candidate_id in golden_descendants:
+                relationship = "descendant"
+            else:
+                relationship = "unrelated"
+            
+            raw_distance = hierarchy.get_shortest_path_length(candidate_id, gold_concept_id)
+            distance = None if raw_distance == float("inf") else raw_distance
 
+
+            miss_rows.append({
+                "mention": row["mention"],
+                "ground_truth": gold_concept_id,
+                "gold_label": row["gold_label"],
+                "candidate_id": candidate_id,
+                "candidate_label": hierarchy.get_label(candidate_id),
+                "candidate_rank_position": rank_position,  # 1 = BM25's top guess, etc.
+                "relationship": relationship,
+                "distance": distance,
+            })
  
+    miss_analysis_df = pd.DataFrame(miss_rows)
  
+    print(f"\n=== Miss Analysis: {len(misses_df)} misses, {len(miss_analysis_df)} candidate-level rows ===")
+    print(miss_analysis_df.groupby("relationship").size())
+ 
+    # --- distance stats, overall and split by relationship type ---
+    print("\nDistance distribution overall:")
+    print(miss_analysis_df["distance"].describe())
+ 
+    print("\nDistance distribution by relationship type:")
+    print(miss_analysis_df.groupby("relationship")["distance"].describe())
+ 
+    # --- per-miss summary: what's the BEST (closest) candidate for each miss? ---
+    # This is usually the more useful number than the raw candidate-level table above:
+    # "how close did BM25's best attempt get" per mention, not per candidate.
+    best_per_miss = (
+        miss_analysis_df.sort_values("distance", na_position="last")
+        .groupby(["mention", "ground_truth"], as_index=False)
+        .first()
+    )
+    print(f"\n=== Best (closest) candidate per miss, n={len(best_per_miss)} ===")
+    print(best_per_miss["distance"].describe())
+    print(best_per_miss["relationship"].value_counts())
+    print(best_per_miss.groupby("relationship")["distance"].describe())
+    print("\nBest-candidate distance distribution:")
+    print(best_per_miss["distance"].value_counts(dropna=False).sort_index())
+    
+    plt.figure(figsize=(8, 6))
+    plt.hist(best_per_miss["distance"].value_counts(dropna=False).sort_index(), bins=range(1, 22), align="left", rwidth=0.8) 
+    plt.xticks(range(1, 22))
+    plt.xlabel("Rank of Gold Concept in BM25 Candidates")
+    plt.ylabel("Frequency")
+    plt.title("Distribution of Gold Concept Ranks in BM25 Candidates")
+    plt.show()
+    
+    # near misses: was ANY candidate within 2 hops, even if not exact?
+    near_miss_threshold = 2
+    near_misses = best_per_miss[best_per_miss["distance"].notna() & (best_per_miss["distance"] <= near_miss_threshold)]
+    print(f"\nNear misses (closest candidate within {near_miss_threshold} hops): "
+          f"{len(near_misses)} ({len(near_misses) / len(best_per_miss):.1%} of misses)")
+ 
+    truly_unrelated = best_per_miss[best_per_miss["distance"].isna()]
+    print(f"Truly unrelated (no candidate connected within search depth): "
+          f"{len(truly_unrelated)} ({len(truly_unrelated) / len(best_per_miss):.1%} of misses)")
+    if len(truly_unrelated):
+        print(truly_unrelated[["mention", "gold_label"]].sample(min(15, len(truly_unrelated)), random_state=0).to_string(index=False))
+ 
+    # save for later comparison (e.g. against dense retrieval's miss analysis)
+    miss_analysis_df.to_pickle("cache/miss_analysis_df.pkl")
+    best_per_miss.to_pickle("cache/miss_analysis_best_per_miss.pkl")
+
 if __name__ == "__main__":
     main()
 
