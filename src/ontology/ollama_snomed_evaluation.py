@@ -5,7 +5,7 @@ import os
 import re
 from ontology.llm_backends import LLMBackend, OllamaBackend
 
-DEFAULT_BACKEND = OllamaBackend("medgemma1.5") # CHANGE FOR DIFFERENT MODELS
+DEFAULT_BACKEND = OllamaBackend("qwen3:8b") # CHANGE FOR DIFFERENT MODELS
 
 LEVEL1 = {
     "404684003": "Clinical finding",
@@ -69,11 +69,26 @@ Strictly return JSON format like this, without any additional text:
         except Exception:
             return {"term": term, "category": "Unknown", "reason": "Unable to classify"}, None
     
-    def classify_hierarchical(self, term, context, snomed, all_ancestors, gt_id, current_level = 1, parent_id = None, start=None, end=None, note_id=None, trace=None):
-        
+    def classify_hierarchical(self, term, context, snomed, all_ancestors, gt_id, current_level = 1,
+                               parent_id = None, start=None, end=None, note_id=None, trace=None,
+                               child_map=None, roots=None):
+        """
+        child_map / roots: optional pruned-subtree navigation, as produced by
+        subtree_pruner.build_allowed_subtree() / get_roots(). When both are
+        provided, the classifier navigates ONLY this pruned subtree:
+          - level 1 offers the subtree's roots instead of the fixed LEVEL1
+            top-level categories
+          - each subsequent level offers child_map[parent_id] instead of
+            snomed.get_children(parent_id)
+        When omitted (the default), behavior is unchanged from before --
+        full-hierarchy navigation starting from LEVEL1.
+        """
+
         # Initialize trace
         if trace is None:
             trace = []
+
+        using_subtree = child_map is not None
 
         def finalize_result(result):
             result.update({
@@ -92,10 +107,16 @@ Strictly return JSON format like this, without any additional text:
 
         # Root level
         if current_level == 1:
-            labels = LEVEL1
+            if using_subtree:
+                labels = {rid: snomed.get_label(rid) for rid in roots}
+            else:
+                labels = LEVEL1
             parent_label = None
         else:
-            children_ids = snomed.get_children(parent_id)
+            if using_subtree:
+                children_ids = child_map.get(parent_id, [])
+            else:
+                children_ids = snomed.get_children(parent_id)
             labels = {cid: snomed.get_label(cid) for cid in children_ids}
             parent_label = snomed.get_label(parent_id)
 
@@ -156,8 +177,13 @@ Strictly return JSON format like this, without any additional text:
         # Stop conditions
         if not chosen_id:
             return finalize_result(result)
-        
-        if not snomed.get_children(chosen_id):
+
+        if using_subtree:
+            has_children = bool(child_map.get(chosen_id))
+        else:
+            has_children = bool(snomed.get_children(chosen_id))
+
+        if not has_children:
             return finalize_result(result)
         
         if not is_valid:
@@ -176,6 +202,8 @@ Strictly return JSON format like this, without any additional text:
             end=end,
             note_id=note_id,
             trace=trace,
+            child_map=child_map,
+            roots=roots,
         )
 
     def save_results(self, filepath="classification_results.json"):
