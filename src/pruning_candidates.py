@@ -37,6 +37,27 @@ DESCENDANT_DEPTH = 2
 # SapBERT model (biomedical entity linking encoder)
 SAPBERT_MODEL_NAME = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
 
+# Pruning to only three top-level hierarchies
+LEVEL1 = {
+    "404684003": "Clinical finding",
+    "71388002": "Procedure",
+    "123037004": "Body structure",
+}
+
+def get_allowed_concepts(hierarchy: SNOMEDHierarchy, root_ids: dict[str, str]) -> set[str]:
+    """
+    Returns the set of concept_ids consisting of the given roots plus all
+    their descendants, using the hierarchy's own child_map (active is-a only).
+    """
+    allowed = set(root_ids.keys())
+    for root_id, label in root_ids.items():
+        t0 = time.time()
+        descendants = hierarchy.get_all_descendants(root_id)
+        allowed |= descendants
+        print(f"  {label} ({root_id}): {len(descendants)} descendants in {time.time() - t0:.1f}s")
+    return allowed
+
+
 def print_results(hierarchy, mention: str, results: list[dict]):
     print(f"\n=== '{mention}' ===")
     if not results:
@@ -92,11 +113,19 @@ def main():
         )
         print(f"Loaded in {time.time() - t0:.1f}s "
             f"({len(hierarchy.parent_map)} concepts with parents, {len(hierarchy.descriptions)} descriptions)")
+        
+        print("Restricting to allowed top-level branches...")
+        t0 = time.time()
+        allowed_concepts = get_allowed_concepts(hierarchy, LEVEL1)
+        print(f"Total allowed concepts: {len(allowed_concepts)} in {time.time() - t0:.1f}s")
     
         print("Building synonym map...")
         t0 = time.time()
         synonyms = hierarchy.build_full_synonym_map()
-        print(f"Built synonym map for {len(synonyms)} concepts in {time.time() - t0:.1f}s")
+        before = len(synonyms)
+        synonyms = {cid: terms for cid, terms in synonyms.items() if cid in allowed_concepts}
+        print(f"Built synonym map for {before} concepts, restricted to {len(synonyms)} "
+            f"in {time.time() - t0:.1f}s")
     
         print("Building BM25 index...")
         t0 = time.time()
@@ -223,7 +252,7 @@ def main():
     print(rr.describe())
 
     plt.figure(figsize=(8, 6))
-    plt.boxplot(rr.dropna(), vert=True)
+    plt.violinplot(rr.dropna(), vert=True)
     plt.xlabel("Reciprocal Rank")
     plt.title("Distribution of Reciprocal Ranks for Gold Concepts in BM25 Candidates")
     plt.show()
@@ -281,8 +310,6 @@ def main():
     print(miss_analysis_df.groupby("relationship")["distance"].describe())
  
     # --- per-miss summary: what's the BEST (closest) candidate for each miss? ---
-    # This is usually the more useful number than the raw candidate-level table above:
-    # "how close did BM25's best attempt get" per mention, not per candidate.
     best_per_miss = (
         miss_analysis_df.sort_values("distance", na_position="last")
         .groupby(["mention", "ground_truth"], as_index=False)
@@ -296,11 +323,10 @@ def main():
     print(best_per_miss["distance"].value_counts(dropna=False).sort_index())
     
     plt.figure(figsize=(8, 6))
-    plt.hist(best_per_miss["distance"].value_counts(dropna=False).sort_index(), bins=range(1, 22), align="left", rwidth=0.8) 
-    plt.xticks(range(1, 22))
-    plt.xlabel("Rank of Gold Concept in BM25 Candidates")
+    plt.hist(best_per_miss["distance"].value_counts(dropna=False).sort_index(), align="left", rwidth=0.8) 
+    plt.xlabel("Distance to ground truth")
     plt.ylabel("Frequency")
-    plt.title("Distribution of Gold Concept Ranks in BM25 Candidates")
+    plt.title("Distribution of Distance for best-misses per mention")
     plt.show()
     
     # near misses: was ANY candidate within 2 hops, even if not exact?

@@ -16,7 +16,7 @@ LEVEL1 = {
 def _strip_parens(label:str) -> str:
     return re.sub(r'\s*\(.*?\)\s*$', '', label).strip()
 
-class OllamaSNOMEDClassifier:
+class SNOMEDClassifier:
 
     def __init__(self, backend: LLMBackend = DEFAULT_BACKEND):
         self.backend = backend
@@ -38,7 +38,7 @@ class OllamaSNOMEDClassifier:
         return f"""
 You are a clinical terminology expert.
  
-Classify the term into the SINGLE BEST matching SNOMED CT top-level hierarchy, using the clinical context provided.
+Classify the term into the SINGLE BEST matching SNOMED CT class, using the clinical context provided.
  
 Context: "{context}"
  

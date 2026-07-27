@@ -19,7 +19,7 @@ SNOMED_DESCRIPTION_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_2026050
 ANNOTATIONS_PATH = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_annotations.csv"
 
 NER_MODEL = "en_core_sci_sm"
-TARGET_LEVEL = "all_baseline_stripped"
+TARGET_LEVEL = "hierarchy_pruning_attempt1"
 CLASSIFICATION_RESULTS_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}.json"
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}.pkl"
 LEVEL_1_TARGET_NAMES = ["Body structure", "Clinical finding", "Procedure"]    
@@ -117,6 +117,7 @@ def main():
 
     print("Number of predictions failed at level 1:", (analysis_df["level_reached"] == 1).sum())
 
+    print("Number of times stopped at a parent node:", analysis_df["stopped_at_parent"].sum())
     # Distribution / correlation plots
     # plot_categorical_distribution(analysis_df[~analysis_df["gt_reached"]], "level_reached")  # Failure level distribution
     # plot_correlation(analysis_df, "level_reached", "distance_to_gt")
@@ -180,33 +181,33 @@ def main():
     # plt.title(title)
     # plt.show()
 
-    summary = analysis_df.groupby("distance_to_gt").agg(
-        n=("exact_term_match", "size"),
-        exact_match_rate=("exact_term_match", "mean"),
-        mean_term_jaccard=("term_jaccard", "mean"),
-    )
-    print("\nNER term accuracy by classification level reached:")
-    print(summary)
+    # summary = analysis_df.groupby("distance_to_gt").agg(
+    #     n=("exact_term_match", "size"),
+    #     exact_match_rate=("exact_term_match", "mean"),
+    #     mean_term_jaccard=("term_jaccard", "mean"),
+    # )
+    # print("\nNER term accuracy by classification level reached:")
+    # print(summary)
 
-    df = analysis_df
-    df = df[~df["gt_reached"]]
+    # df = analysis_df
+    # df = df[~df["gt_reached"]]
  
-    levels = sorted(df["distance_to_gt"].dropna().unique())
-    data = [df.loc[df["distance_to_gt"] == level, "term_jaccard"].dropna() for level in levels]
+    # levels = sorted(df["distance_to_gt"].dropna().unique())
+    # data = [df.loc[df["distance_to_gt"] == level, "term_jaccard"].dropna() for level in levels]
  
-    plt.figure(figsize=(10, 6))
-    plt.boxplot(data, labels=levels)
-    plt.xlabel("Distance to Ground Truth")
-    plt.ylabel("NER Term Jaccard Similarity (predicted vs. ground truth text)")
-    title = "NER Term Match by Failure Level"
-    plt.title(title)
-    plt.show()
+    # plt.figure(figsize=(10, 6))
+    # plt.boxplot(data, labels=levels)
+    # plt.xlabel("Distance to Ground Truth")
+    # plt.ylabel("NER Term Jaccard Similarity (predicted vs. ground truth text)")
+    # title = "NER Term Match by Failure Level"
+    # plt.title(title)
+    # plt.show()
 
-    plot_correlation(analysis_df[~analysis_df["gt_reached"]], "correct_prefix_ratio", "term_jaccard")
+    # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "correct_prefix_ratio", "term_jaccard")
 
-    plot_context_length_by_level(analysis_df, failures_only=True)
+    # plot_context_length_by_level(analysis_df, failures_only=True)
 
-    plot_correlation(analysis_df[~analysis_df["gt_reached"]], "level_reached", "context_length")
+    # plot_correlation(analysis_df[~analysis_df["gt_reached"]], "correct_prefix_ratio", "context_length")
 
     return analysis_df, failures_level_1
 

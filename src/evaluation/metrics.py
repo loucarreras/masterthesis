@@ -65,7 +65,7 @@ def match_entities(predicted, ground_truth, iou_threshold=0.5, alpha=0.5):
             if not spans_overlap(pred, gt):
                 continue
 
-            iou = combined_score(pred, gt)
+            iou = combined_score(pred, gt, alpha)
 
             if iou > best_iou:
                 best_iou = iou
@@ -100,7 +100,7 @@ def match_entity(pred_entity, ground_truth, iou_threshold=0.5, alpha=0.5):
         if not spans_overlap(pred_entity, gt):
             continue
 
-        iou = combined_score(pred_entity, gt)
+        iou = combined_score(pred_entity, gt, alpha)
 
         if iou > best_iou:
             best_iou = iou
