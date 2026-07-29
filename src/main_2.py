@@ -15,7 +15,7 @@ from ontology.snomed_loader import SNOMEDHierarchy
 from evaluation.metrics import match_entity
 
 from pruning.lexical_index import LexicalIndex
-from pruning.subtree_pruner import build_allowed_subtree, get_roots, render_subtree
+from pruning.subtree_pruner import build_allowed_subtree, get_roots, render_subtree, refine_subtree
 
 
 COLUMNS = ["note_id", "start", "end", "concept_id"]
@@ -39,12 +39,12 @@ CONTEXT_WINDOW = 50
 IOU_THRESHOLD = 0.05
 CONTEXT_MODE = "sentence"  # "full_text" | "paragraph" | "sentence"
 
-TARGET_LEVEL = "hierarchy_pruning_attempt1"
+TARGET_LEVEL = "hierarchy_pruning_attempt2"
 OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}"
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}_{CONTEXT_MODE}.pkl"
 
 # Candidate generation
-BM25_TOP_N = 20
+BM25_TOP_N = 5
 DESCENDANT_DEPTH = 2
 
 LEVEL1 = {
@@ -159,29 +159,37 @@ def classify_entities(note_keywords, gt, snomed, lexical_index, output_path=OUTP
 
                 SNOMED_ROOT = "138875005"
                 allowed, parent_map, child_map = build_allowed_subtree(snomed, candidate_ids, descendant_depth=DESCENDANT_DEPTH)
-                allowed.discard(SNOMED_ROOT)
-                parent_map.pop(SNOMED_ROOT, None)
-                for node, parents in parent_map.items():
-                    parent_map[node] = [p for p in parents if p != SNOMED_ROOT]
-                child_map.pop(SNOMED_ROOT, None)  # its children's parent_map entries above already drop it
+                # allowed.discard(SNOMED_ROOT)
+                # parent_map.pop(SNOMED_ROOT, None)
+                # for node, parents in parent_map.items():
+                #     parent_map[node] = [p for p in parents if p != SNOMED_ROOT]
+                # child_map.pop(SNOMED_ROOT, None)  # its children's parent_map entries above already drop it
+                allowed, parent_map, child_map = refine_subtree(allowed, parent_map, child_map, set(candidate_ids))
                 roots = get_roots(allowed, parent_map)
                 prompt_context = render_subtree(snomed, parent_map, child_map, roots, candidate_ids)
                 
-                classifier.classify_hierarchical(
-                    term=mention,
-                    context=term_data["context"],
-                    snomed=snomed,
-                    all_ancestors=gt_ancestors,
-                    gt_id=gt_concept_id,
-                    parent_id=None,
-                    start=term_data["start"],
-                    end=term_data["end"],
-                    note_id=note_id,
-                    child_map=child_map,
-                    roots=roots,
-                    )
-        classifier.save_results(f"{output_path}.json")
-        classifier.save_results_csv(f"{output_path}.csv")
+                print(f"Evaluating... {mention}")
+                print(prompt_context)
+                print("\n")
+                
+                break
+            break
+        break
+        #         classifier.classify_hierarchical(
+        #             term=mention,
+        #             context=term_data["context"],
+        #             snomed=snomed,
+        #             all_ancestors=gt_ancestors,
+        #             gt_id=gt_concept_id,
+        #             parent_id=None,
+        #             start=term_data["start"],
+        #             end=term_data["end"],
+        #             note_id=note_id,
+        #             child_map=child_map,
+        #             roots=roots,
+        #             )
+        # classifier.save_results(f"{output_path}.json")
+        # classifier.save_results_csv(f"{output_path}.csv")
 
     print(f"\nSaved LLM classification results to: {output_path}")
 
