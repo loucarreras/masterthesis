@@ -6,17 +6,29 @@ from rank_bm25 import BM25Okapi
 
 BM25_TOP_N = 20
 
-def _tokenize(text: str) -> list[str]:
+ 
+def word_tokenize(text: str) -> list[str]:
     text = str(text).lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     return text.split()
+ 
+def char_ngram_tokenizer(text: str, n: int = 3) -> list[str]:
+    text = str(text).lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    tokens = []
+    for word in text.split():
+        padded = f"{'_' * (n - 1)}{word}{'_' * (n - 1)}"
+        tokens.extend(padded[i : i + n] for i in range(len(padded) - n + 1))
+    return tokens
+
 
 
 class LexicalIndex:
     """BM25 index over every (conceptId, term) pair. Each description string
     is a separate BM25 'document'; results are aggregated to concept level."""
 
-    def __init__(self, synonyms: dict[str, list[str]]):
+    def __init__(self, synonyms: dict[str, list[str]], tokenizer=word_tokenize):
+        self.tokenizer = tokenizer
         self.doc_concept_ids: list[str] = []
         self.doc_terms: list[str] = []
         tokenized_corpus = []
@@ -24,13 +36,13 @@ class LexicalIndex:
             for term in terms:
                 self.doc_concept_ids.append(concept_id)
                 self.doc_terms.append(term)
-                tokenized_corpus.append(_tokenize(term))
+                tokenized_corpus.append(self.tokenizer(term))
         self.bm25 = BM25Okapi(tokenized_corpus)
 
     def search(self, mention: str, top_n: int = BM25_TOP_N) -> list[tuple[str, float]]:
         """Returns up to top_n (conceptId, score) pairs, deduped by concept,
         keeping each concept's best-scoring description match."""
-        query_tokens = _tokenize(mention)
+        query_tokens = self.tokenizer(mention)
         scores = self.bm25.get_scores(query_tokens)
 
         best_per_concept: dict[str, float] = {}
@@ -47,7 +59,7 @@ class LexicalIndex:
         """Returns up to top_n (conceptId, score, term) tuples, but also which specific synonym string
         produced the best match for each concept."""
 
-        query_tokens = _tokenize(mention)
+        query_tokens = self.tokenizer(mention)
         scores = self.bm25.get_scores(query_tokens)
 
         best_per_concept: dict[str, tuple[float, str]] = {}

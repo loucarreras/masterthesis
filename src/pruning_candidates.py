@@ -5,13 +5,15 @@ import time
 #from pruning.candidate_generator import CandidateGenerator
 #from pruning.dense_index import DenseIndex
 from main_2 import NER_MODEL
-from pruning.lexical_index import LexicalIndex
+from pruning.lexical_index import LexicalIndex, char_ngram_tokenizer
+from pruning.fuzzy_index import FuzzyIndex, BlockedFuzzyIndex
 from ontology.snomed_loader import SNOMEDHierarchy
 # from subtree_pruner import build_allowed_subtree, get_allowed_children
 import pickle
 import pandas as pd
 from evaluation.metrics import match_entity
 import matplotlib.pyplot as plt
+from functools import partial
 
 SNOMED_CONCEPT_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Concept_Snapshot_INT_20260501.txt"
 SNOMED_RELATIONSHIP_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt"
@@ -21,7 +23,7 @@ SNOMED_DESCRIPTION_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_2026050
 CACHE_DIR = Path("./cache")
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}.pkl"
 ANNOTATIONS_PATH = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_annotations.csv"
-out_dir = "cache/lexical_eval_df_20.pkl"
+out_dir = "cache/lexical_eval_df_20_tokenizer.pkl"
 
 # Candidate generation
 BM25_TOP_N = 20
@@ -43,6 +45,10 @@ LEVEL1 = {
     "71388002": "Procedure",
     "123037004": "Body structure",
 }
+
+CANDIDATE_METHOD = "bm25"      # "bm25" | "fuzzy" | "fuzzy_exhaustive"
+FUZZY_SHORTLIST_SIZE = 500      # only used by "fuzzy" (blocked); tune for speed/recall trade-off
+
 
 def get_allowed_concepts(hierarchy: SNOMEDHierarchy, root_ids: dict[str, str]) -> set[str]:
     """
@@ -129,7 +135,16 @@ def main():
     
         print("Building BM25 index...")
         t0 = time.time()
-        lexical_index = LexicalIndex(synonyms)
+        if CANDIDATE_METHOD == "bm25":
+            lexical_index = LexicalIndex(synonyms, tokenizer=partial(char_ngram_tokenizer, n=3))
+        elif CANDIDATE_METHOD == "fuzzy":
+            lexical_index = BlockedFuzzyIndex(synonyms, shortlist_size=FUZZY_SHORTLIST_SIZE)
+        elif CANDIDATE_METHOD == "fuzzy_exhaustive":
+            lexical_index = FuzzyIndex(synonyms)
+        else:
+            raise ValueError(f"Unknown CANDIDATE_METHOD: {CANDIDATE_METHOD}")
+        print(f"Built candidate index in {time.time() - t0:.1f}s")
+
         print(f"Indexed {len(lexical_index.doc_terms)} description strings in {time.time() - t0:.1f}s")
         
         eval_rows = []
