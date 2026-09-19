@@ -65,7 +65,7 @@ def build_analysis_dataframe(results, snomed, gt, note_keywords, iou_threshold=0
 
         distance = None
         if pred_id and gt_id:
-            distance = gt_depth - level_reached
+            distance = snomed.get_shortest_path_distance(gt_id, pred_id)
 
         correct_prefix_ratio = level_reached / gt_depth if gt_depth else 0
 

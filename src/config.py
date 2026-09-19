@@ -18,3 +18,6 @@ DEBUG_SIZE = 10
 # Extraction
 CONTEXT_WINDOW = 50
 OFFSET_FIX = 0  # <-- fix this properly later
+
+SAPBERT_MODEL_NAME = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+DENSE_TOP_N = 20

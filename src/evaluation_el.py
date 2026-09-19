@@ -19,7 +19,7 @@ SNOMED_DESCRIPTION_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_2026050
 ANNOTATIONS_PATH = r"..\data\snomed-ct-entity-linking-challenge-1.2.1\train_annotations.csv"
 
 NER_MODEL = "en_core_sci_sm"
-TARGET_LEVEL = "hierarchy_pruning_attempt1"
+TARGET_LEVEL = "hierarchy_pruning_lexical_dense"
 CLASSIFICATION_RESULTS_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}.json"
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}.pkl"
 LEVEL_1_TARGET_NAMES = ["Body structure", "Clinical finding", "Procedure"]    
@@ -118,6 +118,7 @@ def main():
     print("Number of predictions failed at level 1:", (analysis_df["level_reached"] == 1).sum())
 
     print("Number of times stopped at a parent node:", analysis_df["stopped_at_parent"].sum())
+
     # Distribution / correlation plots
     # plot_categorical_distribution(analysis_df[~analysis_df["gt_reached"]], "level_reached")  # Failure level distribution
     # plot_correlation(analysis_df, "level_reached", "distance_to_gt")
