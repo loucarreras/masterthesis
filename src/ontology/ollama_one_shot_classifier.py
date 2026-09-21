@@ -335,6 +335,7 @@ Strictly return JSON format like this, without any additional text:
             "start": start,
             "end": end,
             "note_id": note_id,
+            "candidate_ids": candidates,
         })
 
         self.results.append(result)
