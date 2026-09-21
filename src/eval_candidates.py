@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
  
 from main_2 import NER_MODEL
 from pruning.lexical_index import LexicalIndex
+from pruning.lexical_index import LexicalIndex
 from pruning.fuzzy_index import FuzzyIndex, BlockedFuzzyIndex
 from pruning.dense_index import DenseIndex, SapBERTEncoder
 from ontology.snomed_loader import SNOMEDHierarchy
