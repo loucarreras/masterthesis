@@ -40,8 +40,10 @@ CONTEXT_WINDOW = 50
 IOU_THRESHOLD = 0.05
 CONTEXT_MODE = "sentence"  # "full_text" | "paragraph" | "sentence"
 
-TARGET_LEVEL = "one_shot_attempt1"
-OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}"
+RUN_ID = os.environ.get("RUN_ID", "0")
+NOTES_LIMIT = int(os.environ.get("NOTES_LIMIT", "0"))
+TARGET_LEVEL = "one_shot"
+OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}_attempt{RUN_ID}"
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}_{CONTEXT_MODE}.pkl"
 CACHE_DIR = Path("./cache")
 
@@ -198,7 +200,11 @@ def main():
     print("Loading data...")
     notes_df = pd.read_csv(TRAINING_PATH)
     print(f"Loaded {len(notes_df)} notes.")
+    if NOTES_LIMIT > 0:
+        notes_df = notes_df.head(NOTES_LIMIT).copy()
+        print(f"[run {RUN_ID}] Limiting to first {NOTES_LIMIT} notes: {list(notes_df.note_id)}")
 
+    allowed_note_ids = set(notes_df.note_id)
     print("Loading ground truth annotations...")
     annotations_df = pd.read_csv(ANNOTATIONS_PATH, dtype={"concept_id": str})
     print(f"Loaded {len(annotations_df)} ground truth annotations.")
@@ -253,6 +259,14 @@ def main():
     dense_index = DenseIndex(synonyms, encoder=encoder, cache_dir=CACHE_DIR)
     print(f"Built dense index over {len(dense_index.doc_terms)} synonym strings "
                   f"in {time.time() - t0:.1f}s")
+
+    
+    if NOTES_LIMIT > 0:
+        before = len(note_keywords)
+        note_keywords = {nid: v for nid, v in note_keywords.items() if nid in allowed_note_ids}
+        print(f"[run {RUN_ID}] note_keywords filtered to allowed notes: {len(note_keywords)} of {before} kept")
+        assert set(note_keywords.keys()) <= allowed_note_ids
+        assert len(note_keywords) <= NOTES_LIMIT
     
     _, classif_results = classify_entities(note_keywords, gt, snomed, lexical_index, dense_index)
     

@@ -1,0 +1,21 @@
+============================================================
+RUN COMPARISON SUMMARY
+============================================================
+Runs compared:              [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+Target notes (5):          ['10043750-DS-6', '10060142-DS-9', '10097089-DS-8', '10124346-DS-4', '10302979-DS-5']
+Mentions compared:          1030
+
+Unanimous agreement rate:   35.0%  (all 10 runs picked the same concept)
+Mean per-mention agreement: 78.6%  (share of runs matching the mode answer)
+Mean entropy:               0.705 bits raw / 0.212 normalized (0 = fully deterministic, 1 normalized = maximally split)
+Fleiss' kappa:              0.681  (see caveat in fleiss_kappa() docstring re: large label space)
+
+Pairwise Cohen's kappa (mean over all run pairs): 0.681
+Pairwise exact-match rate (mean over all run pairs): 68.2%
+
+Per-run accuracy vs gt_id:  mean = 38.4%   std = 1.0%
+Majority-vote accuracy:     42.9%  (beats the average single run -- tells you whether ensembling runs would help)
+
+Top 20 highest-entropy (most unstable) mentions written to hardest_mentions_top20.csv
+
+All outputs written to: C:\Users\usuari.local\Desktop\Lou\masterthesis\src\analysis_output
