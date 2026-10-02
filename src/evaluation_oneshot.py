@@ -10,9 +10,9 @@ SNOMED_CONCEPT_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T12
 SNOMED_RELATIONSHIP_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt"
 SNOMED_DESCRIPTION_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260501.txt"
 
-RESULTS_JSON = "llm_classification_en_core_sci_sm_level_one_shot_attempt1.json"  
-OUTPUT_CSV = "analysis_results_one_shot_attempt1.csv"
-OUTPUT_SUMMARY = "analysis_summary_one_shot_attempt1.json"
+RESULTS_JSON = "llm_classification_en_core_sci_sm_level_one_shot_attempt2.json"  
+OUTPUT_CSV = "analysis_results_one_shot_attempt2.csv"
+OUTPUT_SUMMARY = "analysis_summary_one_shot_attempt2.json"
 
 
 def compute_lca_and_distance(snomed, id_a, id_b):
@@ -48,17 +48,44 @@ def categorize_relationship(snomed, pred_id, gt_id):
 
     return "unrelated"
 
+# ---------------------------------------------------------------------------
+# Candidate-based failure diagnosis
+# ---------------------------------------------------------------------------
+def diagnose_candidate_failure(r):
+    """
+    Distinguishes retrieval failures (ground truth never made it into the
+    candidate set) from LLM choice failures (ground truth was offered but
+    the LLM picked something else, or failed to produce a valid choice).
+    Requires "candidate_ids" on the result (added by the classifier) — older
+    result files without it are reported as unknown.
+    """
+    gt_id = r.get("gt_id")
+    pred_id = r.get("concept_id")
+    candidate_ids = r.get("candidate_ids")
+ 
+    if gt_id is None:
+        return "no_ground_truth"
+    if pred_id == gt_id:
+        return "exact_match"
+    if candidate_ids is None:
+        return "unknown_no_candidate_data"
+    if gt_id not in candidate_ids:
+        return "gt_missing_from_candidates"
+    if pred_id is None:
+        return "llm_failed_to_choose"
+    return "llm_wrong_choice"
 
 # ---------------------------------------------------------------------------
 # Main analysis
 # ---------------------------------------------------------------------------
 def analyze(results, snomed):
     rows = []
-
+ 
     for r in results:
         pred_id = r.get("concept_id")
         gt_id = r.get("gt_id")
-
+        candidate_ids = r.get("candidate_ids")
+ 
         row = {
             "note_id": r.get("note_id"),
             "term": r.get("term"),
@@ -68,8 +95,10 @@ def analyze(results, snomed):
             "predicted_concept_id": pred_id,
             "gt_concept_id": gt_id,
             "is_null": pred_id is None,
+            "num_candidates": len(candidate_ids) if candidate_ids is not None else None,
+            "candidate_diagnosis": diagnose_candidate_failure(r),
         }
-
+ 
         if gt_id is None:
             row.update({
                 "relationship": "no_ground_truth",
@@ -85,7 +114,7 @@ def analyze(results, snomed):
         else:
             relationship = categorize_relationship(snomed, pred_id, gt_id)
             lca, d_pred, d_gt, total = compute_lca_and_distance(snomed, pred_id, gt_id)
-
+ 
             row.update({
                 "relationship": relationship,
                 "lca_id": lca,
@@ -93,11 +122,10 @@ def analyze(results, snomed):
                 "dist_gt_to_lca": d_gt,
                 "total_distance": total,
             })
-
+ 
         rows.append(row)
-
+ 
     return pd.DataFrame(rows)
-
 
 def summarize(df: pd.DataFrame) -> dict:
     total = len(df)
@@ -134,6 +162,10 @@ def summarize(df: pd.DataFrame) -> dict:
             })
         distance_by_relationship[rel] = entry
     summary["distance_by_relationship"] = distance_by_relationship
+
+    summary["candidate_diagnosis_breakdown"] = (
+        df["candidate_diagnosis"].value_counts(dropna=False).to_dict()
+    )
 
     return summary
 
@@ -177,6 +209,10 @@ def main():
 
     print("\nDistance by relationship:")
     for k, v in summary["distance_by_relationship"].items():
+        print(f"  {k}: {v}")
+
+    print("\nCandidate diagnosis (wrong LLM choice vs. GT missing from candidates):")
+    for k, v in summary["candidate_diagnosis_breakdown"].items():
         print(f"  {k}: {v}")
 
 
