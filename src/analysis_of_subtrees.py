@@ -12,8 +12,8 @@ SNOMED_CONCEPT_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T12
 SNOMED_RELATIONSHIP_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt"
 SNOMED_DESCRIPTION_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260501.txt"
  
-LEXICAL_EVAL_CACHE = "cache/dense_eval_df_40.pkl"
-SUBTREE_EVAL_CACHE = "cache/dense_subtree_eval_df_40.pkl"
+LEXICAL_EVAL_CACHE = "cache/lexical_eval_df_20.pkl"
+SUBTREE_EVAL_CACHE = "cache/subtree_eval_df_20.pkl"
  
 DESCENDANT_DEPTH = 2
 SNOMED_ROOT = "138875005"

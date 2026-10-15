@@ -4,8 +4,9 @@ import pandas as pd
 import os
 import re
 from ontology.llm_backends import LLMBackend, OllamaBackend
+import traceback
 
-DEFAULT_BACKEND = OllamaBackend("qwen3:8b") # CHANGE FOR DIFFERENT MODELS
+DEFAULT_BACKEND = OllamaBackend("gemma4:26b", think=False, num_predict=2048) # CHANGE FOR DIFFERENT MODELS
 
 LEVEL1 = {
     "404684003": "Clinical finding",
@@ -60,15 +61,20 @@ Strictly return JSON format like this, without any additional text:
     "reason": "short explanation"
 }}
 """
-    def _call(self, prompt: str, term: str) -> dict:
 
-        try: 
+    def _call(self, prompt: str, term: str):
+        text = None
+        try:
             text, total_time = self.backend.generate(prompt)
-            result = json.loads(text)
-            return result, total_time
-        except Exception:
+            match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+            if not match:
+                raise ValueError("no JSON object found in model output")
+            return json.loads(match.group(0)), total_time
+        except Exception as e:
+            print(f"[LLM ERROR] term={term!r}: {type(e).__name__}: {e}")
+            print(f"[RAW OUTPUT] {text!r}")
             return {"term": term, "category": "Unknown", "reason": "Unable to classify"}, None
-    
+        
     def classify_hierarchical(self, term, context, snomed, all_ancestors, gt_id, current_level = 1,
                                parent_id = None, start=None, end=None, note_id=None, trace=None,
                                child_map=None, roots=None):

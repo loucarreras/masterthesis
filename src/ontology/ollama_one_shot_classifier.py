@@ -162,7 +162,7 @@ import pandas as pd
 
 from ontology.llm_backends import LLMBackend, OllamaBackend
 
-DEFAULT_BACKEND = OllamaBackend("qwen3:8b")  # CHANGE FOR DIFFERENT MODELS
+DEFAULT_BACKEND = OllamaBackend("gemma4:26b", think=False, num_predict=2048)  # CHANGE FOR DIFFERENT MODELS
 
 LEVEL1 = {
     "404684003": "Clinical finding",

@@ -10,9 +10,10 @@ SNOMED_CONCEPT_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T12
 SNOMED_RELATIONSHIP_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Relationship_Snapshot_INT_20260501.txt"
 SNOMED_DESCRIPTION_FILE = r"..\data\SnomedCT_InternationalRF2_PRODUCTION_20260501T120000Z\Snapshot\Terminology\sct2_Description_Snapshot-en_INT_20260501.txt"
 
-RESULTS_JSON = "llm_classification_en_core_sci_sm_level_one_shot_attempt2.json"  
-OUTPUT_CSV = "analysis_results_one_shot_attempt2.csv"
-OUTPUT_SUMMARY = "analysis_summary_one_shot_attempt2.json"
+RESULTS_JSON = "llm_classification_en_core_sci_sm_level_one_shot_gemma24_20notes_copy.json"  
+OUTPUT_CSV = "analysis_results_one_shot_gemma.csv"
+OUTPUT_SUMMARY = "analysis_summary_one_shot_gemma.json"
+
 
 
 def compute_lca_and_distance(snomed, id_a, id_b):

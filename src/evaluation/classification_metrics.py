@@ -41,13 +41,18 @@ def build_analysis_dataframe(results, snomed, gt, note_keywords, iou_threshold=0
 
         filtered_paths = gt_paths.copy()
         path_predicted = []
+        time = []
 
         for step in trace[:-1]:
             predicted_step = step.get("chosen_id")
             level = step.get("level")
+            time_step = step.get("call_time")
 
             if predicted_step is not None:
                 path_predicted.append(predicted_step)
+
+            if time_step is not None:
+                time.append(time_step)
             
             filtered_paths = [
                 path for path in filtered_paths
@@ -62,6 +67,7 @@ def build_analysis_dataframe(results, snomed, gt, note_keywords, iou_threshold=0
         if gt_id in path_predicted:
             gt_reached = True
             
+        time_per_call = np.mean(time)
 
         distance = None
         if pred_id and gt_id:
@@ -83,6 +89,7 @@ def build_analysis_dataframe(results, snomed, gt, note_keywords, iou_threshold=0
 
             "note_id": r.get("note_id"),
             "term": predicted_term,
+            "time": time_per_call,
             "gt_term": gt_term,
             "exact_term_match": exact_term_match,
             "term_jaccard": term_jaccard,

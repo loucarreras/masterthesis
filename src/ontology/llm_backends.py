@@ -10,40 +10,52 @@ class LLMBackend:
 
     def generate(self, prompt: str) -> str:
         raise NotImplementedError
-
 class OllamaBackend(LLMBackend):
 
-    def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434", strip_thinking: bool = False, num_ctx: int = 8192):
+    def __init__(self, model: str, base_url: str = "http://127.0.0.1:11434",
+                 strip_thinking: bool = False, num_ctx: int = 8192,
+                 num_predict: int = 2048, think: bool | None = None,
+                 use_json_format: bool = False):
         self.model = model
-        self.url = f"{base_url}/api/generate"
+        self.url = f"{base_url}/api/chat"
         self.strip_thinking = strip_thinking
         self.num_ctx = num_ctx
+        self.num_predict = num_predict
+        self.think = think
+        self.use_json_format = use_json_format
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str):
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "messages": [{"role": "user", "content": prompt}],
             "stream": False,
-            "format": "json",
             "options": {
                 "num_ctx": self.num_ctx,
-            }
+                "num_predict": self.num_predict,
+                "temperature": 0,
+            },
         }
-        response = requests.post(self.url, json=payload)
+        if self.think is not None:
+            payload["think"] = self.think
+        if self.use_json_format:
+            payload["format"] = "json"
+
+        response = requests.post(self.url, json=payload, timeout=300)
         response.raise_for_status()
         data = response.json()
+        # print("done_reason:", data.get("done_reason"))
+        # print("eval_count:", data.get("eval_count"))
+        # print("THINKING:", (data.get("message", {}).get("thinking") or "")[:500])
+        # print("CONTENT:", repr(data.get("message", {}).get("content")))
 
         total_time = data.get("total_duration")
-        text = data.get("response", "") or ""
-        thinking = data.get("thinking", "") or ""
+        msg = data.get("message", {})
+        text = (msg.get("content") or "").strip()
 
-        if not text.strip() and thinking.strip():
-            text = thinking
-        
-        # print(json.dumps(response.json(), indent=2)) 
-
+        # Do NOT fall back to msg["thinking"]: it's reasoning, not the answer.
         if self.strip_thinking:
             text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
         return text, total_time
 
 # class OllamaBackend(LLMBackend):

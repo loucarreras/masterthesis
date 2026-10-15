@@ -40,7 +40,7 @@ CONTEXT_WINDOW = 50
 IOU_THRESHOLD = 0.05
 CONTEXT_MODE = "sentence"  # "full_text" | "paragraph" | "sentence"
 
-TARGET_LEVEL = "hierarchy_pruning_lexical_dense"
+TARGET_LEVEL = "gemma4_26b_treepruning"
 OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}"
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}_{CONTEXT_MODE}.pkl"
 CACHE_DIR = Path("./cache")

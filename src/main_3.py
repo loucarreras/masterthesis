@@ -42,8 +42,8 @@ CONTEXT_MODE = "sentence"  # "full_text" | "paragraph" | "sentence"
 
 RUN_ID = os.environ.get("RUN_ID", "0")
 NOTES_LIMIT = int(os.environ.get("NOTES_LIMIT", "0"))
-TARGET_LEVEL = "one_shot"
-OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}_attempt{RUN_ID}"
+TARGET_LEVEL = "one_shot_gemma24_20notes"
+OUTPUT_PATH = f"llm_classification_{NER_MODEL}_level_{TARGET_LEVEL}"
 CACHE_PATH = f"cache/note_keywords_{NER_MODEL}_{CONTEXT_MODE}.pkl"
 CACHE_DIR = Path("./cache")
 

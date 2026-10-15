@@ -103,6 +103,9 @@ def main():
     print("Distribution of levels reached:")
     print(analysis_df["level_reached"].describe())
 
+    print("Time analysis")
+    print(analysis_df["time"].describe())
+
     print("Distribution of level of failure:")
     print(analysis_df[~analysis_df["gt_reached"]]["level_reached"].describe())
 

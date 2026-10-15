@@ -19,7 +19,7 @@ OUT_PATH = "cache/tree_comparison_df.pkl"
 
 DESCENDANT_DEPTH = 2
 SAPBERT_MODEL_NAME = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
-COMPUTE_EMBEDDING_COHERENCE = True  # set False to skip the (slower) semantic metric
+COMPUTE_EMBEDDING_COHERENCE = False  # set False to skip the (slower) semantic metric
 
 LEVEL1 = {
     "404684003": "Clinical finding",
